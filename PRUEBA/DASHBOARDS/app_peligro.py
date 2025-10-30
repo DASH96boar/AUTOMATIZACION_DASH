@@ -512,9 +512,9 @@ def leer_sql(ruta):
 
 # Carga de datos SQL
 try:
-    ruta_departamentos = '/workspaces/SIG-AUTOMATIZACION/PRUEBA/DASHBOARDS/departamentos.sql'
-    ruta_provincias = '/workspaces/SIG-AUTOMATIZACION/PRUEBA/DASHBOARDS/provincias.sql'
-    ruta_distritos = '/workspaces/SIG-AUTOMATIZACION/PRUEBA/DASHBOARDS/distritos.sql'
+    ruta_departamentos = '/workspaces/AUTOMATIZACION_DASH/PRUEBA/DASHBOARDS/departamentos.sql'
+    ruta_provincias = '/workspaces/AUTOMATIZACION_DASH/PRUEBA/DASHBOARDS/provincias.sql'
+    ruta_distritos = '/workspaces/AUTOMATIZACION_DASH/PRUEBA/DASHBOARDS/distritos.sql'
     print("Cargando datos SQL para todo el Perú...")
     depa_data, prov_data, dist_data = leer_sql(ruta_departamentos), leer_sql(ruta_provincias), leer_sql(ruta_distritos)
     if not all([depa_data, prov_data, dist_data]): raise ValueError("Archivos SQL no encontrados.")
@@ -1057,9 +1057,9 @@ if __name__ == '__main__':
     print("🔍 VERIFICANDO ARCHIVOS DE PELIGRO".center(80))
     print(f"{'='*80}")
     
-    ruta_base_pendiente = "/workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/PELIGRO/PENDIENTE"
-    ruta_base_geomorfo = "/workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/PELIGRO/GEOMORFOLOGIA"
-    ruta_base_ppmax = "/workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/PELIGRO/PP_MAX"
+    ruta_base_pendiente = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PELIGRO/PENDIENTE"
+    ruta_base_geomorfo = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PELIGRO/GEOMORFOLOGIA"
+    ruta_base_ppmax = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PELIGRO/PP_MAX"
     
     if os.path.exists(ruta_base_pendiente):
         pendiente_files = [f for r, d, files in os.walk(ruta_base_pendiente) for f in files if f.endswith('.shp')]

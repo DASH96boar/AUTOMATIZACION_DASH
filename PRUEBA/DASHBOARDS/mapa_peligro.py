@@ -33,7 +33,7 @@ except ImportError:
     print("⚠️ WhiteboxTools o rasterio no disponibles. Instalando...")
 
 # --- CONFIGURACIÓN GLOBAL ---
-ruta_base = "/workspaces/SIG-AUTOMATIZACION/PRUEBA"
+ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 AMARILLO_CLARO = "#FFEE58"
 
 # RUTAS BASE DE LAS CAPAS DE PELIGRO

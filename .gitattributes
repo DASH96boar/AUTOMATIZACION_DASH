@@ -1,4 +1,7 @@
 *.shp filter=lfs diff=lfs merge=lfs -text
 *.dbf filter=lfs diff=lfs merge=lfs -text
+PRUEBA/DATA/CENTROS[[:space:]]POBLADOS[[:space:]]/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.dbf filter=lfs diff=lfs merge=lfs -text
+PRUEBA/DATA/PELIGRO/PENDIENTE/PENDIENTE_PESO.dbf filter=lfs diff=lfs merge=lfs -text
+PRUEBA/DATA/PELIGRO/PENDIENTE/PENDIENTE_PESO.shp filter=lfs diff=lfs merge=lfs -text
 *.shx filter=lfs diff=lfs merge=lfs -text
 *.tif filter=lfs diff=lfs merge=lfs -text

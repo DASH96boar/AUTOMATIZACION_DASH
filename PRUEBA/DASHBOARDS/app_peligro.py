@@ -460,6 +460,98 @@ app.index_string = '''
                 margin-top: 15px;
             }
             
+            /* BOTONES DE TIPO DE PELIGRO */
+            .peligro-selector {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 12px;
+                margin-bottom: 0px;
+            }
+            
+            .btn-peligro {
+                padding: 18px 14px !important;
+                border-radius: 14px !important;
+                font-weight: 700 !important;
+                font-size: 0.8rem !important;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                border: 2px solid var(--border) !important;
+                background: rgba(15, 52, 96, 0.4) !important;
+                color: var(--text-secondary) !important;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+                cursor: pointer;
+                position: relative;
+            }
+            
+            .btn-peligro i {
+                font-size: 2rem;
+                transition: all 0.3s ease;
+            }
+            
+            .btn-peligro-active {
+                background: linear-gradient(135deg, #27ae60 0%, #229954 100%) !important;
+                border-color: #27ae60 !important;
+                color: white !important;
+                box-shadow: 0 8px 25px rgba(39, 174, 96, 0.5) !important;
+                transform: translateY(-3px) scale(1.02);
+                cursor: default !important;
+                pointer-events: none !important;
+            }
+            
+            .btn-peligro-active i {
+                transform: scale(1.1);
+            }
+            
+            .btn-peligro-active::after {
+                content: '✓';
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                background: rgba(255, 255, 255, 0.3);
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 900;
+                font-size: 0.9rem;
+            }
+            
+            .btn-peligro:not(.btn-peligro-active):not(:disabled):hover {
+                border-color: #27ae60;
+                background: rgba(39, 174, 96, 0.2) !important;
+                transform: translateY(-2px);
+            }
+            
+            .btn-peligro:not(.btn-peligro-active):not(:disabled):active {
+                transform: translateY(0px) scale(0.98);
+            }
+            
+            .btn-peligro:disabled {
+                opacity: 0.35;
+                cursor: not-allowed !important;
+                background: rgba(15, 52, 96, 0.2) !important;
+            }
+            
+            .btn-peligro:disabled i {
+                opacity: 0.4;
+            }
+            
+            .badge-soon {
+                font-size: 0.65rem;
+                padding: 3px 8px;
+                background: rgba(241, 196, 15, 0.2);
+                color: #f1c40f;
+                border-radius: 6px;
+                font-weight: 600;
+                margin-top: -5px;
+            }
+            
             /* RESPONSIVE */
             @media (max-width: 768px) {
                 .main-container {
@@ -483,6 +575,10 @@ app.index_string = '''
                     width: calc(100% - 50px);
                     left: 25px;
                     right: 25px;
+                }
+                
+                .peligro-selector {
+                    grid-template-columns: 1fr;
                 }
             }
         </style>
@@ -616,6 +712,8 @@ dashboard_layout = dbc.Container([
     dcc.Download(id="download-map-image"),
     dcc.Store(id='map-filepath-store', storage_type='memory'),
     dcc.Store(id='loading-state', storage_type='memory', data=False),
+    dcc.Store(id='selected-peligro', storage_type='memory', data='inundacion'),
+    dcc.Store(id='peligro-locked', storage_type='memory', data=False),
     
     html.Div([
         html.A([
@@ -671,6 +769,33 @@ dashboard_layout = dbc.Container([
                             className='mb-4'
                         )
                     ]),
+                    
+                    html.Hr(),
+                    
+                    html.Div([
+                        html.Label([
+                            html.I(className="bi bi-exclamation-triangle"),
+                            "Tipo de Peligro"
+                        ], style={'marginBottom': '15px'}),
+                        html.Div(className='peligro-selector', children=[
+                            dbc.Button([
+                                html.I(className="bi bi-droplet-fill"),
+                                "Inundación"
+                            ], id='btn-inundacion', className='btn-peligro btn-peligro-active', n_clicks=0),
+                            
+                            dbc.Button([
+                                html.I(className="bi bi-arrow-down-right-circle-fill"),
+                                "Deslizamiento",
+                                html.Span("PRÓXIMAMENTE", className="badge-soon")
+                            ], id='btn-deslizamiento', className='btn-peligro', disabled=True, n_clicks=0),
+                            
+                            dbc.Button([
+                                html.I(className="bi bi-snow2"),
+                                "Heladas",
+                                html.Span("PRÓXIMAMENTE", className="badge-soon")
+                            ], id='btn-heladas', className='btn-peligro', disabled=True, n_clicks=0)
+                        ])
+                    ], className='mb-4'),
                     
                     html.Hr(),
                     
@@ -775,6 +900,8 @@ app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
     dcc.Store(id='session-store', storage_type='session'),
     dcc.Store(id='loading-state', storage_type='memory', data=False),
+    dcc.Store(id='selected-peligro', storage_type='memory', data='inundacion'),
+    dcc.Store(id='peligro-locked', storage_type='memory', data=False),
     html.Div(id='page-content')
 ])
 
@@ -819,6 +946,108 @@ def display_user_nav(session_data):
         session_data.get('username', 'Usuario')
     ] if session_data and session_data.get('logged_in') else None
 
+# Callback para manejar la selección de tipo de peligro (SOLO SELECCIÓN, NO EJECUCIÓN)
+@app.callback(
+    [Output('btn-inundacion', 'className'),
+     Output('btn-deslizamiento', 'className'),
+     Output('btn-heladas', 'className'),
+     Output('selected-peligro', 'data'),
+     Output('peligro-locked', 'data')],
+    [Input('btn-inundacion', 'n_clicks'),
+     Input('btn-deslizamiento', 'n_clicks'),
+     Input('btn-heladas', 'n_clicks')],
+    [State('peligro-locked', 'data')],
+    prevent_initial_call=False
+)
+def update_peligro_selection(inundacion_clicks, deslizamiento_clicks, heladas_clicks, is_locked):
+    """
+    Maneja la selección visual del tipo de peligro.
+    IMPORTANTE: 
+    - Solo actualiza la selección, NO ejecuta ningún código.
+    - Una vez seleccionado, SE BLOQUEA y no se puede cambiar.
+    - La ejecución ocurre al presionar "Generar Mapa".
+    """
+    from dash import callback_context
+    
+    # Si ya está bloqueado, mantener el estado actual sin cambios
+    if is_locked:
+        # Determinar cuál está activo basado en el estado bloqueado
+        if inundacion_clicks and inundacion_clicks > 0:
+            return (
+                'btn-peligro btn-peligro-active',
+                'btn-peligro',
+                'btn-peligro',
+                'inundacion',
+                True
+            )
+        elif deslizamiento_clicks and deslizamiento_clicks > 0:
+            return (
+                'btn-peligro',
+                'btn-peligro btn-peligro-active',
+                'btn-peligro',
+                'deslizamiento',
+                True
+            )
+        elif heladas_clicks and heladas_clicks > 0:
+            return (
+                'btn-peligro',
+                'btn-peligro',
+                'btn-peligro btn-peligro-active',
+                'heladas',
+                True
+            )
+    
+    # Valores por defecto al inicio (antes del primer clic)
+    if not callback_context.triggered:
+        return (
+            'btn-peligro',  # Ninguno activo al inicio
+            'btn-peligro',
+            'btn-peligro',
+            None,
+            False
+        )
+    
+    # Detectar qué botón fue presionado
+    button_id = callback_context.triggered[0]['prop_id'].split('.')[0]
+    
+    # Actualizar clases según el botón presionado Y BLOQUEAR
+    if button_id == 'btn-inundacion':
+        print("✅ Tipo de peligro SELECCIONADO y BLOQUEADO: INUNDACIÓN")
+        return (
+            'btn-peligro btn-peligro-active',
+            'btn-peligro',
+            'btn-peligro',
+            'inundacion',
+            True  # BLOQUEAR después del primer clic
+        )
+    elif button_id == 'btn-deslizamiento':
+        print("✅ Tipo de peligro SELECCIONADO y BLOQUEADO: DESLIZAMIENTO")
+        return (
+            'btn-peligro',
+            'btn-peligro btn-peligro-active',
+            'btn-peligro',
+            'deslizamiento',
+            True  # BLOQUEAR después del primer clic
+        )
+    elif button_id == 'btn-heladas':
+        print("✅ Tipo de peligro SELECCIONADO y BLOQUEADO: HELADAS")
+        return (
+            'btn-peligro',
+            'btn-peligro',
+            'btn-peligro btn-peligro-active',
+            'heladas',
+            True  # BLOQUEAR después del primer clic
+        )
+    
+    # Por defecto, mantener sin selección
+    return (
+        'btn-peligro',
+        'btn-peligro',
+        'btn-peligro',
+        None,
+        False
+    )
+
 @app.callback(
     Output('provincia-dropdown', 'options'), 
     Output('provincia-dropdown', 'disabled'), 
@@ -859,9 +1088,10 @@ def enable_buttons(*values):
 
 @app.callback(
     Output('selection-summary', 'children'), 
-    [Input(c, 'value') for c in ['user-name-input', 'departamento-dropdown', 'provincia-dropdown', 'distrito-dropdown']]
+    [Input(c, 'value') for c in ['user-name-input', 'departamento-dropdown', 'provincia-dropdown', 'distrito-dropdown']],
+    Input('selected-peligro', 'data')
 )
-def update_summary(user_name, departamento, provincia, distrito):
+def update_summary(user_name, departamento, provincia, distrito, tipo_peligro):
     if not any([user_name, departamento, provincia, distrito]): 
         return dbc.Alert([
             html.I(className="bi bi-info-circle me-2"),
@@ -869,6 +1099,21 @@ def update_summary(user_name, departamento, provincia, distrito):
         ], color="light", className='mb-0', style={'fontSize': '0.9rem'})
     
     summary_items = []
+    
+    # Determinar tipo de peligro y su icono
+    peligro_map = {
+        'inundacion': ('Inundación', 'bi-droplet-fill'),
+        'deslizamiento': ('Deslizamiento', 'bi-arrow-down-right-circle-fill'),
+        'heladas': ('Heladas', 'bi-snow2')
+    }
+    
+    peligro_nombre, peligro_icon = peligro_map.get(tipo_peligro, ('Inundación', 'bi-droplet-fill'))
+    
+    summary_items.append(html.Div(className='summary-item', children=[
+        html.I(className=f"bi {peligro_icon}"),
+        html.Span([html.Strong("Peligro:"), f" {peligro_nombre}"])
+    ]))
+    
     if user_name: 
         summary_items.append(html.Div(className='summary-item', children=[
             html.I(className="bi bi-person-fill"),
@@ -913,14 +1158,36 @@ def activate_loading(n_clicks):
     [State('user-name-input', 'value'),
      State('departamento-dropdown', 'value'),
      State('provincia-dropdown', 'value'),
-     State('distrito-dropdown', 'value')],
+     State('distrito-dropdown', 'value'),
+     State('selected-peligro', 'data')],
     prevent_initial_call=True
 )
-def generate_and_save_map_callback(n_clicks, user_name, departamento, provincia, distrito):
+def generate_and_save_map_callback(n_clicks, user_name, departamento, provincia, distrito, tipo_peligro):
+    """
+    ESTE ES EL ÚNICO CALLBACK QUE EJECUTA EL CÓDIGO mapa_peligro.py
+    Se ejecuta SOLO cuando el usuario presiona "Generar Mapa" después de:
+    1. Seleccionar el tipo de peligro
+    2. Completar todos los campos de ubicación
+    """
     ruta_guardado = None
     
     try:
-        print(f"\n⚠️  Generando mapa de susceptibilidad para {distrito}...")
+        # Determinar nombre del peligro para logging
+        peligro_nombre = {
+            'inundacion': 'Inundación',
+            'deslizamiento': 'Deslizamiento',
+            'heladas': 'Heladas'
+        }.get(tipo_peligro, 'Inundación')
+        
+        print(f"\n{'='*60}")
+        print(f"⚙️  EJECUTANDO mapa_peligro.py".center(60))
+        print(f"{'='*60}")
+        print(f"📍 Ubicación: {distrito}, {provincia}, {departamento}")
+        print(f"💧 Tipo de peligro: {peligro_nombre}")
+        print(f"👤 Responsable: {user_name}")
+        print(f"{'='*60}\n")
+        
+        # AQUÍ SE EJECUTA EL CÓDIGO mapa_peligro.py
         ruta_guardado = generar_mapa_peligro(user_name, departamento, provincia, distrito)
         
         if ruta_guardado and os.path.exists(ruta_guardado):
@@ -967,13 +1234,16 @@ def generate_and_save_map_callback(n_clicks, user_name, departamento, provincia,
                 'Generar Mapa'
             ]
             
-            print(f"✅ Éxito")
-            print(f"   Ruta: {ruta_guardado}")
-            print(f"   Tamaño: {file_size_mb:.2f} MB")
+            print(f"\n{'='*60}")
+            print(f"✅ ÉXITO - mapa_peligro.py ejecutado correctamente".center(60))
+            print(f"{'='*60}")
+            print(f"📁 Ruta: {ruta_guardado}")
+            print(f"💾 Tamaño: {file_size_mb:.2f} MB")
+            print(f"{'='*60}\n")
             
             return success_alert, ruta_guardado, False, button_text
         else:
-            print(f"❌ El archivo no existe después de generarlo")
+            print(f"\n❌ ERROR: El archivo no existe después de ejecutar mapa_peligro.py\n")
             
             error_alert = dbc.Alert([
                 html.Div([
@@ -997,6 +1267,8 @@ def generate_and_save_map_callback(n_clicks, user_name, departamento, provincia,
             return error_alert, None, False, button_text
             
     except FileNotFoundError as e:
+        print(f"\n❌ ERROR: Archivo no encontrado - {str(e)}\n")
+        
         error_alert = dbc.Alert([
             html.Div([
                 html.I(className="bi bi-file-excel-fill", style={'fontSize': '2.5rem', 'color': '#f39c12', 'marginBottom': '15px'})
@@ -1015,7 +1287,8 @@ def generate_and_save_map_callback(n_clicks, user_name, departamento, provincia,
         return error_alert, None, False, button_text
         
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
+        print(f"\n❌ ERROR INESPERADO en mapa_peligro.py")
+        print(f"Detalle: {str(e)}\n")
         import traceback
         traceback.print_exc()
         
@@ -1087,10 +1360,11 @@ if __name__ == '__main__':
     print("🎨 Diseño: Moderno y Profesional")
     print("🎯 Paleta: Gradientes Azul-Rojo con Efectos Glassmorphism")
     print("✨ Animaciones: Suaves y Fluidas")
+    print("💧 Tipos de Peligro: Inundación (Activo) | Deslizamiento | Heladas")
     print("📊 Fórmula: (PENDIENTE + GEOMORFOLOGÍA + PP_MAX) / 3")
     print("📈 Clasificación: Baja | Media | Alta | Muy Alta")
     print("🌐 Puerto: 8052")
-    print("📍 URL: http://127.0.0.1:8052")
+    print("🔗 URL: http://127.0.0.1:8052")
     print(f"{'='*80}\n")
     
     app.run(debug=True, port=8052)

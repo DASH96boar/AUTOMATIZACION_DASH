@@ -24,7 +24,7 @@ AMARILLO_CLARO = "#FFEE58"
 # ════════════════════════════════════════════════════════════════════════
 def cargar_centros_poblados():
     """Carga el shapefile de centros poblados"""
-    ruta_directa = f"{ruta_base}/DATA/CENTROS POBLADOS/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
+    ruta_directa = f"{ruta_base}/DATA/CENTROS POBLADOS /Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
 
     if os.path.exists(ruta_directa):
         try:

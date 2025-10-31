@@ -20,7 +20,7 @@ from rasterio.mask import mask as rio_mask
 from matplotlib.colors import BoundaryNorm, ListedColormap
 
 # --- RUTA BASE ---
-ruta_base = "/workspaces/SIG-AUTOMATIZACION/PRUEBA"
+ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 AMARILLO_CLARO = "#FFEE58"
 
 # PALETA DE COLORES PARA PENDIENTES
@@ -322,7 +322,7 @@ def generar_mapa_pendientes(nombre_usuario, departamento_sel, provincia_sel, dis
     print(f"   - Usuario: {nombre_usuario}")
     print(f"   - Ubicación: {distrito_sel}, {provincia_sel}, {departamento_sel}")
 
-    ruta_pendientes = "/workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/PENDIENTES/pendientes.tif"
+    ruta_pendientes = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PENDIENTES/pendientes.tif"
     
     if not os.path.exists(ruta_pendientes):
         print(f"❌ ERROR: El archivo de pendientes no existe: {ruta_pendientes}")

@@ -16,7 +16,7 @@ from matplotlib.lines import Line2D
 import datetime
 
 # --- RUTA BASE ---
-ruta_base = "/workspaces/SIG-AUTOMATIZACION/PRUEBA"
+ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 AMARILLO_CLARO = "#FFEE58"
 
 # ════════════════════════════════════════════════════════════════════════
@@ -46,7 +46,7 @@ def cargar_centros_poblados():
 # ════════════════════════════════════════════════════════════════════════
 def cargar_rios():
     """Carga el shapefile de ríos desde ruta directa"""
-    ruta_directa = "/workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/MAPA DE UBICACION/RIOS/rios_lineal_idep_ign_100k_geogpsperu.shp"
+    ruta_directa = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/MAPA DE UBICACION/RIOS/rios_lineal_idep_ign_100k_geogpsperu.shp"
     
     if os.path.exists(ruta_directa):
         try:

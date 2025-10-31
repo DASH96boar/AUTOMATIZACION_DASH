@@ -426,9 +426,9 @@ def leer_sql(ruta):
 
 # Carga de datos SQL
 try:
-    ruta_departamentos = '/workspaces/SIG-AUTOMATIZACION/PRUEBA/DASHBOARDS/departamentos.sql'
-    ruta_provincias = '/workspaces/SIG-AUTOMATIZACION/PRUEBA/DASHBOARDS/provincias.sql'
-    ruta_distritos = '/workspaces/SIG-AUTOMATIZACION/PRUEBA/DASHBOARDS/distritos.sql'
+    ruta_departamentos = '/workspaces/AUTOMATIZACION_DASH/PRUEBA/DASHBOARDS/departamentos.sql'
+    ruta_provincias = '/workspaces/AUTOMATIZACION_DASH/PRUEBA/DASHBOARDS/provincias.sql'
+    ruta_distritos = '/workspaces/AUTOMATIZACION_DASH/PRUEBA/DASHBOARDS/distritos.sql'
     print("Cargando datos SQL para todo el Perú...")
     depa_data, prov_data, dist_data = leer_sql(ruta_departamentos), leer_sql(ruta_provincias), leer_sql(ruta_distritos)
     if not all([depa_data, prov_data, dist_data]): raise ValueError("Archivos SQL no encontrados.")
@@ -952,7 +952,7 @@ def generate_and_save_map_callback(n_clicks, user_name, map_type, departamento, 
             ruta_guardado = generar_mapa_climatica(user_name, departamento, provincia, distrito)
         elif map_type == 'pendientes':
             print(f"\n📐 Generando mapa de pendientes para {distrito}...")
-            ruta_pendientes = "/workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/PENDIENTES/pendientes.tif"
+            ruta_pendientes = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PENDIENTES/pendientes.tif"
             if not os.path.exists(ruta_pendientes):
                 raise FileNotFoundError(f"Archivo de pendientes no encontrado: {ruta_pendientes}")
             ruta_guardado = generar_mapa_pendientes(user_name, departamento, provincia, distrito)
@@ -1045,9 +1045,9 @@ def generate_and_save_map_callback(n_clicks, user_name, map_type, departamento, 
             html.Div([
                 html.Strong("Ubicaciones esperadas:"),
                 html.Br(),
-                html.Code("Pendientes: /workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/PENDIENTES/pendientes.tif",
+                html.Code("Pendientes: /workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PENDIENTES/pendientes.tif",
                          style={'background': '#FFF8E1', 'padding': '8px', 'borderRadius': '6px', 'display': 'block', 'marginBottom': '8px'}),
-                html.Code("Geología: /workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/GEOLOGIA/{DEPARTAMENTO}/geolo_{departamento}.shp",
+                html.Code("Geología: /workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/GEOLOGIA/{DEPARTAMENTO}/geolo_{departamento}.shp",
                          style={'background': '#FFF8E1', 'padding': '8px', 'borderRadius': '6px', 'display': 'block'})
             ], className='mt-3 text-center')
         ], color="warning", className='border-0')
@@ -1120,7 +1120,7 @@ if __name__ == '__main__':
     print("📐 VERIFICANDO ARCHIVO DE PENDIENTES".center(80))
     print(f"{'='*80}")
     
-    ruta_pendientes = "/workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/PENDIENTES/pendientes.tif"
+    ruta_pendientes = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PENDIENTES/pendientes.tif"
     if os.path.exists(ruta_pendientes):
         print(f"✅ Archivo encontrado: {os.path.getsize(ruta_pendientes) / (1024*1024):.2f} MB")
     else:
@@ -1131,7 +1131,7 @@ if __name__ == '__main__':
     print("🪨 VERIFICANDO ARCHIVOS DE GEOLOGÍA".center(80))
     print(f"{'='*80}")
     
-    ruta_geologia_base = "/workspaces/SIG-AUTOMATIZACION/PRUEBA/DATA/GEOLOGIA"
+    ruta_geologia_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/GEOLOGIA"
     if os.path.exists(ruta_geologia_base):
         departamentos_geo = [d for d in os.listdir(ruta_geologia_base) if os.path.isdir(os.path.join(ruta_geologia_base, d))]
         print(f"✅ Carpeta de geología encontrada")

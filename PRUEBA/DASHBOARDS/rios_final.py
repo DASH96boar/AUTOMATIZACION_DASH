@@ -22,7 +22,7 @@ import shutil
 import pandas as pd
 
 # --- RUTA BASE ORIGINAL ---
-ruta_base = "/workspaces/SIG-AUTOMATIZACION/PRUEBA"
+ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 
 # PALETA DE COLORES PARA DISTANCIA A RIOS
 COLORES_RIOS = ['#FF0000', '#FF7F00', '#FFFF00', '#00FF00', '#0080FF']

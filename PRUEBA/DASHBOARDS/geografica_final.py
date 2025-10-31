@@ -15,7 +15,7 @@ from matplotlib.lines import Line2D
 import datetime
 
 # --- RUTA BASE ORIGINAL (Respetando tu configuración) ---
-ruta_base = "/workspaces/SIG-AUTOMATIZACION/PRUEBA"
+ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 
 AMARILLO_CLARO = "#FFEE58"
 

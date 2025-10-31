@@ -43,7 +43,7 @@ RUTA_BASE_PPMAX = f"{ruta_base}/DATA/PELIGRO/PP_MAX"
 RUTA_BASE_RIOS = f"{ruta_base}/DATA/PELIGRO/DISTANCIA_RIO"
 RUTA_BASE_GEOLOGIA = f"{ruta_base}/DATA/PELIGRO/GEOLOGIA"
 RUTA_DEM = f"{RUTA_BASE_RIOS}/DEM.tif"
-RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS POBLADOS/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
+RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS POBLADOS /Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
 
 # CONFIGURACIÓN DE GENERACIÓN DE RÍOS
 INTENSIDAD_RIOS = "muy_baja"  # Opciones: "muy_alta", "alta", "media", "baja", "muy_baja"

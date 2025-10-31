@@ -47,7 +47,7 @@ RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS POBLADOS /Centros_Poblados_IN
 
 # CONFIGURACIÓN DE GENERACIÓN DE RÍOS
 INTENSIDAD_RIOS = "muy_baja"  # Opciones: "muy_alta", "alta", "media", "baja", "muy_baja"
-UMBRALES_RIOS = {"muy_alta": 50, "alta": 200, "media": 500, "baja": 1000, "muy_baja": 2000}
+UMBRALES_RIOS = {"muy_alta": 50, "alta": 200, "media": 500, "baja": 1000, "muy_baja": 1700}
 
 # CONFIGURACIÓN DE BUFFERS CON PESOS
 BUFFERS_CONFIG = [

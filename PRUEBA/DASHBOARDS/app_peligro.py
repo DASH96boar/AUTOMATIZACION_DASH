@@ -1361,7 +1361,7 @@ if __name__ == '__main__':
     print("🎯 Paleta: Gradientes Azul-Rojo con Efectos Glassmorphism")
     print("✨ Animaciones: Suaves y Fluidas")
     print("💧 Tipos de Peligro: Inundación (Activo) | Deslizamiento | Heladas")
-    print("📊 Fórmula: (PENDIENTE + GEOMORFOLOGÍA + PP_MAX) / 3")
+    print("📊 Fórmula: (PENDIENTE + GEOMORFOLOGÍA + PP_MAX + GEOLOGIA + DISTANCIA_RIO) / 5")
     print("📈 Clasificación: Baja | Media | Alta | Muy Alta")
     print("🌐 Puerto: 8052")
     print("🔗 URL: http://127.0.0.1:8052")

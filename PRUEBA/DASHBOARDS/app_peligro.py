@@ -4,9 +4,16 @@ from dash import Dash, html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
 import re
 import os
+import time
+import threading
+import uuid
+import json
 
 # Importar la función del mapa de peligro
 from mapa_peligro import generar_mapa_peligro
+
+# Diccionario global para rastrear procesos en segundo plano
+PROCESS_STATUS = {}
 
 # ==================== CONFIGURACIÓN DE LA APP ====================
 app = Dash(
@@ -714,6 +721,9 @@ dashboard_layout = dbc.Container([
     dcc.Store(id='loading-state', storage_type='memory', data=False),
     dcc.Store(id='selected-peligro', storage_type='memory', data='inundacion'),
     dcc.Store(id='peligro-locked', storage_type='memory', data=False),
+    dcc.Store(id='process-id', storage_type='memory'),
+    dcc.Store(id='generation-status', storage_type='memory', data={'status': 'idle'}),
+    dcc.Interval(id='check-process', interval=2000, disabled=True),  # Verifica cada 2 segundos
     
     html.Div([
         html.A([
@@ -902,6 +912,8 @@ app.layout = html.Div([
     dcc.Store(id='loading-state', storage_type='memory', data=False),
     dcc.Store(id='selected-peligro', storage_type='memory', data='inundacion'),
     dcc.Store(id='peligro-locked', storage_type='memory', data=False),
+    dcc.Store(id='process-id', storage_type='memory'),
+    dcc.Store(id='generation-status', storage_type='memory', data={'status': 'idle'}),
     html.Div(id='page-content')
 ])
 
@@ -1070,11 +1082,13 @@ def update_distritos(provincia):
         return [{'label': dist, 'value': dist} for dist in sorted(DISTRITOS_POR_PROV.get(provincia, []))], False, None
     return [], True, None
 
+
 @app.callback(
-    Output('generate-map-button', 'disabled'), 
-    Output('download-button', 'disabled'),
+    Output('generate-map-button', 'disabled', allow_duplicate=True), 
+    Output('download-button', 'disabled', allow_duplicate=True),
     [Input(c, 'value') for c in ['user-name-input', 'departamento-dropdown', 'provincia-dropdown', 'distrito-dropdown']],
-    Input('loading-state', 'data')
+    Input('loading-state', 'data'),
+    prevent_initial_call=True
 )
 def enable_buttons(*values): 
     loading_state = values[-1]
@@ -1140,20 +1154,10 @@ def update_summary(user_name, departamento, provincia, distrito, tipo_peligro):
 @app.callback(
     Output('loading-state', 'data', allow_duplicate=True),
     Output('generate-map-button', 'children', allow_duplicate=True),
-    Input('generate-map-button', 'n_clicks'),
-    prevent_initial_call=True
-)
-def activate_loading(n_clicks):
-    return True, [
-        html.I(className="bi bi-hourglass-split spin me-2"),
-        'Procesando...'
-    ]
-
-@app.callback(
-    Output('map-container', 'children'),
-    Output('map-filepath-store', 'data'),
-    Output('loading-state', 'data'),
-    Output('generate-map-button', 'children'),
+    Output('generate-map-button', 'disabled', allow_duplicate=True),
+    Output('check-process', 'disabled'),
+    Output('process-id', 'data'),
+    Output('generation-status', 'data', allow_duplicate=True),
     Input('generate-map-button', 'n_clicks'),
     [State('user-name-input', 'value'),
      State('departamento-dropdown', 'value'),
@@ -1162,153 +1166,288 @@ def activate_loading(n_clicks):
      State('selected-peligro', 'data')],
     prevent_initial_call=True
 )
-def generate_and_save_map_callback(n_clicks, user_name, departamento, provincia, distrito, tipo_peligro):
+def start_map_generation(n_clicks, user_name, departamento, provincia, distrito, tipo_peligro):
     """
-    ESTE ES EL ÚNICO CALLBACK QUE EJECUTA EL CÓDIGO mapa_peligro.py
-    Se ejecuta SOLO cuando el usuario presiona "Generar Mapa" después de:
-    1. Seleccionar el tipo de peligro
-    2. Completar todos los campos de ubicación
+    Inicia la generación del mapa en segundo plano usando threading
     """
-    ruta_guardado = None
+    # Generar ID único para este proceso
+    process_id = str(uuid.uuid4())
     
-    try:
-        # Determinar nombre del peligro para logging
-        peligro_nombre = {
-            'inundacion': 'Inundación',
-            'deslizamiento': 'Deslizamiento',
-            'heladas': 'Heladas'
-        }.get(tipo_peligro, 'Inundación')
-        
-        print(f"\n{'='*60}")
-        print(f"⚙️  EJECUTANDO mapa_peligro.py".center(60))
-        print(f"{'='*60}")
-        print(f"📍 Ubicación: {distrito}, {provincia}, {departamento}")
-        print(f"💧 Tipo de peligro: {peligro_nombre}")
-        print(f"👤 Responsable: {user_name}")
-        print(f"{'='*60}\n")
-        
-        # AQUÍ SE EJECUTA EL CÓDIGO mapa_peligro.py
-        ruta_guardado = generar_mapa_peligro(user_name, departamento, provincia, distrito)
-        
-        if ruta_guardado and os.path.exists(ruta_guardado):
-            file_size_mb = os.path.getsize(ruta_guardado) / (1024 * 1024)
+    # Determinar nombre del peligro
+    peligro_nombre = {
+        'inundacion': 'Inundación',
+        'deslizamiento': 'Deslizamiento',
+        'heladas': 'Heladas'
+    }.get(tipo_peligro, 'Inundación')
+    
+    print(f"\n{'='*60}")
+    print(f"🚀 INICIANDO PROCESO EN SEGUNDO PLANO".center(60))
+    print(f"{'='*60}")
+    print(f"🆔 Process ID: {process_id}")
+    print(f"📍 Ubicación: {distrito}, {provincia}, {departamento}")
+    print(f"💧 Tipo de peligro: {peligro_nombre}")
+    print(f"👤 Responsable: {user_name}")
+    print(f"{'='*60}\n")
+    
+    # Inicializar estado del proceso
+    PROCESS_STATUS[process_id] = {
+        'status': 'processing',
+        'start_time': time.time(),
+        'filepath': None,
+        'error': None,
+        'user_name': user_name,
+        'departamento': departamento,
+        'provincia': provincia,
+        'distrito': distrito
+    }
+    
+    # Función que se ejecutará en segundo plano
+    def background_task():
+        try:
+            print(f"🔄 [{process_id}] Ejecutando mapa_peligro.py...")
+            ruta_guardado = generar_mapa_peligro(user_name, departamento, provincia, distrito)
             
-            success_alert = html.Div([
-                dbc.Alert([
-                    html.Div([
-                        html.I(className="bi bi-check-circle-fill success-icon")
-                    ], className='text-center mb-3'),
-                    html.H5("¡Mapa Generado Exitosamente!", className="alert-heading text-center"),
-                    html.Hr(style={'opacity': '0.5'}),
-                    html.Div([
-                        html.Div(className='summary-item', children=[
-                            html.I(className="bi bi-file-earmark-image"),
-                            html.Span([html.Strong("Archivo:"), html.Code(os.path.basename(ruta_guardado), style={'fontSize': '0.85em', 'background': 'rgba(15, 52, 96, 0.8)', 'padding': '4px 8px', 'borderRadius': '6px'})])
-                        ]),
-                        html.Div(className='summary-item', children=[
-                            html.I(className="bi bi-hdd"),
-                            html.Span([html.Strong("Tamaño:"), f" {file_size_mb:.2f} MB"])
-                        ]),
-                        html.Div(className='summary-item', children=[
-                            html.I(className="bi bi-bar-chart"),
-                            html.Span([html.Strong("Parámetros:"), " Pendiente, Geomorfología, PP Máxima"])
-                        ]),
-                        html.Div(className='summary-item', children=[
-                            html.I(className="bi bi-graph-up"),
-                            html.Span([html.Strong("Clasificación:"), " Baja, Media, Alta, Muy Alta"])
-                        ])
-                    ], className='mt-3')
-                ], color="success", className='border-0 mb-3'),
+            tiempo_transcurrido = time.time() - PROCESS_STATUS[process_id]['start_time']
+            minutos = int(tiempo_transcurrido // 60)
+            segundos = int(tiempo_transcurrido % 60)
+            
+            if ruta_guardado and os.path.exists(ruta_guardado):
+                file_size_mb = os.path.getsize(ruta_guardado) / (1024 * 1024)
+                PROCESS_STATUS[process_id]['status'] = 'completed'
+                PROCESS_STATUS[process_id]['filepath'] = ruta_guardado
+                PROCESS_STATUS[process_id]['file_size'] = file_size_mb
+                PROCESS_STATUS[process_id]['duration'] = tiempo_transcurrido
                 
+                print(f"\n{'='*60}")
+                print(f"✅ [{process_id}] PROCESO COMPLETADO".center(60))
+                print(f"{'='*60}")
+                print(f"📁 Archivo: {os.path.basename(ruta_guardado)}")
+                print(f"💾 Tamaño: {file_size_mb:.2f} MB")
+                print(f"⏱️  Tiempo: {minutos}m {segundos}s")
+                print(f"{'='*60}\n")
+            else:
+                PROCESS_STATUS[process_id]['status'] = 'error'
+                PROCESS_STATUS[process_id]['error'] = 'Archivo no generado'
+                print(f"❌ [{process_id}] Error: Archivo no existe después de generación")
+                
+        except Exception as e:
+            tiempo_transcurrido = time.time() - PROCESS_STATUS[process_id]['start_time']
+            PROCESS_STATUS[process_id]['status'] = 'error'
+            PROCESS_STATUS[process_id]['error'] = str(e)
+            PROCESS_STATUS[process_id]['duration'] = tiempo_transcurrido
+            
+            print(f"\n❌ [{process_id}] ERROR EN PROCESO")
+            print(f"Detalle: {str(e)}")
+            print(f"⏱️  Tiempo: {int(tiempo_transcurrido // 60)}m {int(tiempo_transcurrido % 60)}s\n")
+            import traceback
+            traceback.print_exc()
+    
+    # Iniciar thread en segundo plano
+    thread = threading.Thread(target=background_task, daemon=True)
+    thread.start()
+    
+    return (
+        True,
+        [
+            html.I(className="bi bi-hourglass-split spin me-2"),
+            'Generando mapa en segundo plano...'
+        ],
+        True,
+        False,  # Habilitar el interval para verificar
+        process_id,
+        {'status': 'processing', 'process_id': process_id}
+    )
+
+@app.callback(
+    Output('map-container', 'children'),
+    Output('map-filepath-store', 'data'),
+    Output('loading-state', 'data'),
+    Output('generate-map-button', 'children'),
+    Output('check-process', 'disabled', allow_duplicate=True),
+    Output('generation-status', 'data'),
+    Output('generate-map-button', 'disabled'),
+    Output('download-button', 'disabled'),
+    Input('check-process', 'n_intervals'),
+    State('process-id', 'data'),
+    prevent_initial_call=True
+)
+def check_process_status(n_intervals, process_id):
+    """
+    Verifica periódicamente el estado del proceso en segundo plano
+    """
+    if not process_id or process_id not in PROCESS_STATUS:
+        return (
+            dbc.Alert("Error: Proceso no encontrado", color="danger"),
+            None,
+            False,
+            [html.I(className="bi bi-lightning-fill me-2"), 'Generar Mapa'],
+            True,
+            {'status': 'idle'},
+            False,
+            True
+        )
+    
+    status = PROCESS_STATUS[process_id]
+    current_status = status['status']
+    
+    # Calcular tiempo transcurrido
+    tiempo_transcurrido = time.time() - status['start_time']
+    minutos = int(tiempo_transcurrido // 60)
+    segundos = int(tiempo_transcurrido % 60)
+    
+    if current_status == 'processing':
+        # Aún procesando - mostrar progreso
+        progress_message = dbc.Alert([
+            html.Div([
+                html.I(className="bi bi-hourglass-split spin", style={'fontSize': '3rem', 'color': 'var(--accent)', 'marginBottom': '15px'})
+            ], className='text-center'),
+            html.H5("Generando Mapa de Peligro", className="alert-heading text-center"),
+            html.Hr(style={'opacity': '0.5'}),
+            html.Div([
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-clock"),
+                    html.Span([html.Strong("Tiempo transcurrido:"), f" {minutos}m {segundos}s"])
+                ]),
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-geo-alt"),
+                    html.Span([html.Strong("Ubicación:"), f" {status['distrito']}, {status['provincia']}"])
+                ]),
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-info-circle"),
+                    html.Span("El proceso puede tomar entre 2-10 minutos dependiendo del área")
+                ])
+            ], className='mt-3'),
+            html.P("Esta página se actualizará automáticamente cuando esté listo...", 
+                   className='text-center mt-3 mb-0', 
+                   style={'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
+        ], color="info", className='border-0')
+        
+        return (
+            progress_message,
+            None,
+            True,
+            [html.I(className="bi bi-hourglass-split spin me-2"), f'Procesando... {minutos}m {segundos}s'],
+            False,  # Mantener interval activo
+            {'status': 'processing', 'time': f'{minutos}m {segundos}s'},
+            True,  # Deshabilitar botón generar
+            True   # Deshabilitar botón descargar
+        )
+    
+    elif current_status == 'completed':
+        # Proceso completado exitosamente
+        filepath = status['filepath']
+        file_size_mb = status['file_size']
+        duration = status['duration']
+        dur_min = int(duration // 60)
+        dur_sec = int(duration % 60)
+        
+        success_alert = html.Div([
+            dbc.Alert([
                 html.Div([
-                    html.H6([
-                        html.I(className="bi bi-arrow-down-circle-fill me-2"),
-                        "Descarga tu archivo"
-                    ], className='text-center mb-2', style={'fontWeight': '700'}),
-                    html.P("Presiona el botón 'Descargar' para obtener el mapa", className='text-center mb-0', style={'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
-                ], className='download-section')
-            ])
-            
-            button_text = [
-                html.I(className="bi bi-lightning-fill me-2"),
-                'Generar Mapa'
-            ]
-            
-            print(f"\n{'='*60}")
-            print(f"✅ ÉXITO - mapa_peligro.py ejecutado correctamente".center(60))
-            print(f"{'='*60}")
-            print(f"📁 Ruta: {ruta_guardado}")
-            print(f"💾 Tamaño: {file_size_mb:.2f} MB")
-            print(f"{'='*60}\n")
-            
-            return success_alert, ruta_guardado, False, button_text
-        else:
-            print(f"\n❌ ERROR: El archivo no existe después de ejecutar mapa_peligro.py\n")
-            
-            error_alert = dbc.Alert([
-                html.Div([
-                    html.I(className="bi bi-exclamation-triangle-fill", style={'fontSize': '2.5rem', 'color': '#f39c12', 'marginBottom': '15px'})
-                ], className='text-center'),
-                html.H5("Error en la Generación", className="alert-heading text-center"),
+                    html.I(className="bi bi-check-circle-fill success-icon")
+                ], className='text-center mb-3'),
+                html.H5("¡Mapa Generado Exitosamente!", className="alert-heading text-center"),
                 html.Hr(style={'opacity': '0.5'}),
-                html.P("No se pudo generar el mapa correctamente. Verifica:", style={'fontSize': '0.95rem'}),
-                html.Ul([
-                    html.Li("Que existan los archivos de peligro (Pendiente, Geomorfología, PP)"),
-                    html.Li("Que el distrito tenga datos disponibles"),
-                    html.Li("Los logs en la terminal para más detalles")
-                ], style={'fontSize': '0.9rem'})
-            ], color="warning", className='border-0')
+                html.Div([
+                    html.Div(className='summary-item', children=[
+                        html.I(className="bi bi-file-earmark-image"),
+                        html.Span([html.Strong("Archivo:"), html.Code(os.path.basename(filepath), 
+                                  style={'fontSize': '0.85em', 'background': 'rgba(15, 52, 96, 0.8)', 
+                                         'padding': '4px 8px', 'borderRadius': '6px'})])
+                    ]),
+                    html.Div(className='summary-item', children=[
+                        html.I(className="bi bi-hdd"),
+                        html.Span([html.Strong("Tamaño:"), f" {file_size_mb:.2f} MB"])
+                    ]),
+                    html.Div(className='summary-item', children=[
+                        html.I(className="bi bi-clock"),
+                        html.Span([html.Strong("Tiempo total:"), f" {dur_min}m {dur_sec}s"])
+                    ]),
+                    html.Div(className='summary-item', children=[
+                        html.I(className="bi bi-bar-chart"),
+                        html.Span([html.Strong("Parámetros:"), " Pendiente, Geomorfología, Precipitacion, Geología,Distancia rio"])
+                    ]),
+                    html.Div(className='summary-item', children=[
+                        html.I(className="bi bi-graph-up"),
+                        html.Span([html.Strong("Clasificación:"), " Baja, Media, Alta, Muy Alta"])
+                    ])
+                ], className='mt-3')
+            ], color="success", className='border-0 mb-3'),
             
-            button_text = [
-                html.I(className="bi bi-lightning-fill me-2"),
-                'Generar Mapa'
-            ]
-            
-            return error_alert, None, False, button_text
-            
-    except FileNotFoundError as e:
-        print(f"\n❌ ERROR: Archivo no encontrado - {str(e)}\n")
+            html.Div([
+                html.H6([
+                    html.I(className="bi bi-arrow-down-circle-fill me-2"),
+                    "Descarga tu archivo"
+                ], className='text-center mb-2', style={'fontWeight': '700'}),
+                html.P("Presiona el botón 'Descargar' para obtener el mapa", 
+                       className='text-center mb-0', 
+                       style={'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
+            ], className='download-section')
+        ])
+        
+        # Limpiar el estado del proceso después de 30 segundos
+        def cleanup():
+            time.sleep(30)
+            if process_id in PROCESS_STATUS:
+                del PROCESS_STATUS[process_id]
+                print(f"🧹 [{process_id}] Estado del proceso limpiado")
+        
+        threading.Thread(target=cleanup, daemon=True).start()
+        
+        return (
+            success_alert,
+            filepath,
+            False,
+            [html.I(className="bi bi-lightning-fill me-2"), 'Generar Mapa'],
+            True,  # Detener interval
+            {'status': 'completed', 'filepath': filepath},
+            False,  # Habilitar botón generar
+            False   # Habilitar botón descargar
+        )
+    
+    elif current_status == 'error':
+        # Error en el proceso
+        error_msg = status.get('error', 'Error desconocido')
+        duration = status.get('duration', tiempo_transcurrido)
+        dur_min = int(duration // 60)
+        dur_sec = int(duration % 60)
         
         error_alert = dbc.Alert([
             html.Div([
-                html.I(className="bi bi-file-excel-fill", style={'fontSize': '2.5rem', 'color': '#f39c12', 'marginBottom': '15px'})
+                html.I(className="bi bi-x-octagon-fill", 
+                       style={'fontSize': '2.5rem', 'color': '#c0392b', 'marginBottom': '15px'})
             ], className='text-center'),
-            html.H5("Archivo No Encontrado", className="alert-heading text-center"),
+            html.H5("Error en la Generación", className="alert-heading text-center"),
             html.Hr(style={'opacity': '0.5'}),
-            html.P(f"Error: {str(e)}", style={'fontSize': '0.9rem'}),
-            html.P("Verifica las rutas de los archivos en la documentación", style={'fontSize': '0.85rem', 'color': 'var(--text-secondary)'})
-        ], color="warning", className='border-0')
-        
-        button_text = [
-            html.I(className="bi bi-lightning-fill me-2"),
-            'Generar Mapa'
-        ]
-        
-        return error_alert, None, False, button_text
-        
-    except Exception as e:
-        print(f"\n❌ ERROR INESPERADO en mapa_peligro.py")
-        print(f"Detalle: {str(e)}\n")
-        import traceback
-        traceback.print_exc()
-        
-        error_alert = dbc.Alert([
-            html.Div([
-                html.I(className="bi bi-x-octagon-fill", style={'fontSize': '2.5rem', 'color': '#c0392b', 'marginBottom': '15px'})
-            ], className='text-center'),
-            html.H5("Error Inesperado", className="alert-heading text-center"),
-            html.Hr(style={'opacity': '0.5'}),
-            html.P(f"Ocurrió un error: {str(e)}", style={'fontSize': '0.9rem'}),
-            html.P("Consulta la terminal para más detalles", style={'fontSize': '0.85rem', 'color': 'var(--text-secondary)'})
+            html.P(f"Ocurrió un error: {error_msg}", style={'fontSize': '0.9rem'}),
+            html.P("Verifica:", style={'fontSize': '0.95rem', 'marginTop': '15px'}),
+            html.Ul([
+                html.Li("Que existan los archivos de peligro (Pendiente, Geomorfología, PP)"),
+                html.Li("Que el distrito tenga datos disponibles"),
+                html.Li("Los logs en la terminal para más detalles")
+            ], style={'fontSize': '0.9rem'}),
+            html.P(f"Tiempo antes del error: {dur_min}m {dur_sec}s", 
+                   style={'fontSize': '0.85rem', 'color': 'var(--text-secondary)', 'marginTop': '15px'})
         ], color="danger", className='border-0')
         
-        button_text = [
-            html.I(className="bi bi-lightning-fill me-2"),
-            'Generar Mapa'
-        ]
+        # Limpiar el estado del proceso
+        def cleanup():
+            time.sleep(30)
+            if process_id in PROCESS_STATUS:
+                del PROCESS_STATUS[process_id]
         
-        return error_alert, None, False, button_text
-
+        threading.Thread(target=cleanup, daemon=True).start()
+        
+        return (
+            error_alert,
+            None,
+            False,
+            [html.I(className="bi bi-lightning-fill me-2"), 'Generar Mapa'],
+            True,  # Detener interval
+            {'status': 'error', 'error': error_msg},
+            False,  # Habilitar botón generar para reintentar
+            True    # Deshabilitar botón descargar
+        )
 @app.callback(
     Output('download-map-image', 'data'),
     Input('download-button', 'n_clicks'),
@@ -1363,8 +1502,22 @@ if __name__ == '__main__':
     print("💧 Tipos de Peligro: Inundación (Activo) | Deslizamiento | Heladas")
     print("📊 Fórmula: (PENDIENTE + GEOMORFOLOGÍA + PP_MAX + GEOLOGIA + DISTANCIA_RIO) / 5")
     print("📈 Clasificación: Baja | Media | Alta | Muy Alta")
+    print("⏱️  Timeout Extendido: Hasta 10 minutos para procesos largos")
     print("🌐 Puerto: 8052")
     print("🔗 URL: http://127.0.0.1:8052")
     print(f"{'='*80}\n")
     
-    app.run(debug=True, port=8052)
+    # Configuración extendida del servidor para procesos largos
+    from werkzeug.serving import WSGIRequestHandler
+    
+    # Aumentar timeout de request a 10 minutos (600 segundos)
+    WSGIRequestHandler.timeout = 600
+    
+    # Configurar el servidor Flask con timeouts extendidos
+    app.server.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
+    
+    print("⚙️  Configuración de timeouts:")
+    print(f"   • Request timeout: 600 segundos (10 minutos)")
+    print(f"   • Esto permite procesar áreas grandes sin interrupciones\n")
+    
+    app.run(debug=True, port=8052, threaded=True)

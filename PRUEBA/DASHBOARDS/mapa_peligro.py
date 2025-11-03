@@ -1144,3 +1144,4 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         traceback.print_exc()
         plt.close(fig)
         return None
+    

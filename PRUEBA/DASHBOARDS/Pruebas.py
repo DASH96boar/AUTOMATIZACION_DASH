@@ -1,4 +1,4 @@
-# Archivo: app_peligro.py - DASHBOARD CON PELIGROS Y ELEMENTOS EXPUESTOS
+# Archivo: app_peligro.py - DASHBOARD CON PELIGROS Y ELEMENTOS EXPUESTOS - CORREGIDO
 
 from dash import Dash, html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
@@ -27,7 +27,7 @@ app = Dash(
     suppress_callback_exceptions=True
 )
 
-# [MISMO CSS QUE ANTES - NO LO MODIFICO PARA MANTENER EL DISEÑO]
+# CSS COMPLETO
 app.index_string = '''
 <!DOCTYPE html>
 <html>
@@ -628,7 +628,7 @@ except Exception as e:
     print(f"❌ Error crítico al cargar datos SQL: {e}. Usando datos de respaldo.")
     LISTA_DEPARTAMENTOS, PROVINCIAS_POR_DEPA, DISTRITOS_POR_PROV = ['LIMA'], {'LIMA': ['LIMA']}, {'LIMA': ['MIRAFLORES']}
 
-# ==================== CARGAR GEODATAFRAMES GLOBALMENTE ====================
+# ==================== CARGAR GEODATAFRAMES GLOBALMENTE (CORREGIDO) ====================
 print("\n📦 Cargando GeoDataFrames de límites administrativos...")
 
 ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
@@ -636,25 +636,13 @@ ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 # Intentar múltiples ubicaciones posibles para los shapefiles
 rutas_posibles = {
     'distritos': [
-        f"{ruta_base}/DATA/LIMITES/DISTRITOS/DISTRITOS.shp",
-        f"{ruta_base}/DATA/UBICACION/DISTRITOS/DISTRITOS.shp",
-        f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS/DISTRITOS.shp",
-        f"{ruta_base}/DISTRITOS/DISTRITOS.shp",
-        f"{ruta_base}/DATA/DISTRITOS.shp"
+        f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS DEL PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
     ],
     'provincias': [
-        f"{ruta_base}/DATA/LIMITES/PROVINCIAS/PROVINCIAS.shp",
-        f"{ruta_base}/DATA/UBICACION/PROVINCIAS/PROVINCIAS.shp",
-        f"{ruta_base}/DATA/MAPA DE UBICACION/PROVINCIAS/PROVINCIAS.shp",
-        f"{ruta_base}/PROVINCIAS/PROVINCIAS.shp",
-        f"{ruta_base}/DATA/PROVINCIAS.shp"
+        f"{ruta_base}/DATA/MAPA DE UBICACION/PROVINCIAS DEL PERU/PROVINCIAS_inei_geogpsperu_suyopomalia.shp"
     ],
     'departamentos': [
-        f"{ruta_base}/DATA/LIMITES/DEPARTAMENTOS/DEPARTAMENTOS.shp",
-        f"{ruta_base}/DATA/UBICACION/DEPARTAMENTOS/DEPARTAMENTOS.shp",
-        f"{ruta_base}/DATA/MAPA DE UBICACION/DEPARTAMENTOS/DEPARTAMENTOS.shp",
-        f"{ruta_base}/DEPARTAMENTOS/DEPARTAMENTOS.shp",
-        f"{ruta_base}/DATA/DEPARTAMENTOS.shp"
+        f"{ruta_base}/DATA/MAPA DE UBICACION/DEPARTAMENTOS DEL PERU/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp"
     ]
 }
 
@@ -707,7 +695,8 @@ try:
         gdf_departamentos = None
         print("   ❌ No se pudo cargar GeoDataFrame de departamentos")
     
-    if not all([gdf_distritos, gdf_provincias, gdf_departamentos]):
+    # ✅ CORRECCIÓN CRÍTICA: Usar "is None" en lugar de evaluar el GeoDataFrame directamente
+    if gdf_distritos is None or gdf_provincias is None or gdf_departamentos is None:
         print("\n⚠️  ADVERTENCIA: Algunos GeoDataFrames no se pudieron cargar")
         print("   Los mapas de elementos expuestos pueden fallar")
         print("   Verifica que los shapefiles existan en alguna de estas ubicaciones:")
@@ -1295,61 +1284,15 @@ def start_map_generation(n_clicks, user_name, departamento, provincia, distrito,
                 if gdf_distritos is None or gdf_provincias is None or gdf_departamentos is None:
                     raise Exception("GeoDataFrames de límites no disponibles. Verifica que los shapefiles existan.")
                 
-                # Importar funciones auxiliares
-                try:
-                    from elementos_expuestos import (
-                        normalizar_texto,
-                        encontrar_columna_nombre
-                    )
-                except ImportError as ie:
-                    raise Exception(f"Error importando funciones de elementos_expuestos.py: {ie}")
+                print(f"📍 [{process_id}] La función cargará los límites internamente...")
                 
-                print(f"📍 [{process_id}] Filtrando límites administrativos...")
-                
-                # Detectar columnas
-                col_dist = encontrar_columna_nombre(gdf_distritos, 
-                    ['NOMBDIST', 'NOMBRE', 'DISTRITO', 'NAME', 'DIST'])
-                col_prov = encontrar_columna_nombre(gdf_provincias, 
-                    ['NOMBPROV', 'NOMBRE', 'PROVINCIA', 'NAME', 'PROV'])
-                col_depa = encontrar_columna_nombre(gdf_departamentos, 
-                    ['NOMBDEP', 'NOMBRE', 'DEPARTAMENTO', 'NAME', 'DEPA'])
-                
-                if not all([col_dist, col_prov, col_depa]):
-                    raise ValueError("No se pudieron detectar columnas de nombre en los GeoDataFrames")
-                
-                print(f"   🔍 Columnas detectadas:")
-                print(f"      • Distrito: {col_dist}")
-                print(f"      • Provincia: {col_prov}")
-                print(f"      • Departamento: {col_depa}")
-                
-                # Filtrar distrito
-                distrito_normalizado = normalizar_texto(distrito)
-                gdf_distrito_filtrado = gdf_distritos[
-                    gdf_distritos[col_dist].apply(normalizar_texto) == distrito_normalizado
-                ].copy()
-                
-                if len(gdf_distrito_filtrado) == 0:
-                    # Buscar parcial
-                    gdf_distrito_filtrado = gdf_distritos[
-                        gdf_distritos[col_dist].apply(
-                            lambda x: distrito_normalizado in normalizar_texto(x)
-                        )
-                    ].copy()
-                    
-                    if len(gdf_distrito_filtrado) == 0:
-                        raise ValueError(f"No se encontró el distrito '{distrito}' en los datos")
-                
-                print(f"   ✅ Distrito filtrado: {len(gdf_distrito_filtrado)} polígono(s)")
-                
-                # Generar mapa
+                # Generar mapa - La función carga los shapefiles internamente
+                # Solo necesita: nombre_usuario, departamento, provincia, distrito
                 ruta_guardado = generar_mapa_elementos_expuestos(
                     user_name, 
                     departamento, 
                     provincia, 
-                    distrito,
-                    gdf_distrito_filtrado,  # GDF filtrado del distrito
-                    gdf_departamentos,      # GDF completo de departamentos
-                    gdf_provincias          # GDF completo de provincias
+                    distrito
                 )
                 
             else:
@@ -1685,8 +1628,8 @@ if __name__ == '__main__':
     print("      • Vías (Nacional, Departamental, Vecinal)")
     print("🔧 Arquitectura: Modular y escalable")
     print("⏱️ Timeout: 10 minutos para procesos largos")
-    print("🌐 Puerto: 8052")
-    print("🔗 URL: http://127.0.0.1:8052")
+    print("🌐 Puerto: 8053")
+    print("🔗 URL: http://127.0.0.1:8053")
     print(f"{'='*80}\n")
     
     # Configuración extendida del servidor
@@ -1699,4 +1642,5 @@ if __name__ == '__main__':
     print(f"   • Procesamiento en segundo plano habilitado")
     print(f"   • Threading habilitado para múltiples usuarios\n")
     
-    app.run(debug=True, port=8052, threaded=True)
+    # CAMBIO DE PUERTO A 8053 PARA EVITAR CONFLICTO
+    app.run(debug=True, port=8053, threaded=True)

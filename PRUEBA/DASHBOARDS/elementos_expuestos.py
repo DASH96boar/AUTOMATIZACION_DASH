@@ -298,7 +298,7 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     print("\n📦 Cargando límites administrativos...")
     gdf_departamentos = cargar_shapefile("departamento", "Departamentos")
     gdf_provincias = cargar_shapefile("provincia", "Provincias")
-    gdf_distritos = cargar_shapefile("distrito", "Distritos")
+    gdf_distritos = cargar_shapefile("distrito", "Distritos del Perú")
 
     if gdf_departamentos is None or gdf_provincias is None or gdf_distritos is None:
         print("❌ Faltan capas base. Abortando.")
@@ -308,6 +308,7 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     col_dpto = next((c for c in ['NOMBDEP', 'DEPARTAMEN'] if c in gdf_departamentos.columns), None)
     col_prov = next((c for c in ['NOMBPROV', 'PROVINCIA'] if c in gdf_provincias.columns), None)
     col_distr = next((c for c in ['NOMBDIST', 'DISTRITO'] if c in gdf_distritos.columns), None)
+
 
     if not all([col_dpto, col_prov, col_distr]):
         print("❌ No se pudieron identificar las columnas de nombres")
@@ -706,38 +707,3 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
         traceback.print_exc()
         plt.close(fig)
         return None
-
-
-# ══════════════════════════════════════════════════════════════════════════════
-# 🧪 FUNCIÓN DE PRUEBA
-# ══════════════════════════════════════════════════════════════════════════════
-
-if __name__ == "__main__":
-    print("\n" + "="*80)
-    print("🧪 PRUEBA DE GENERACIÓN DE MAPA DE ELEMENTOS EXPUESTOS")
-    print("="*80)
-    
-    # Parámetros de prueba (AJUSTA SEGÚN TUS DATOS)
-    departamento_prueba = "CUSCO"
-    provincia_prueba = "ANTA"
-    distrito_prueba = "ANTA"
-    usuario_prueba = "test_user"
-    
-    print(f"\n🎯 Parámetros de prueba:")
-    print(f"   Departamento: {departamento_prueba}")
-    print(f"   Provincia: {provincia_prueba}")
-    print(f"   Distrito: {distrito_prueba}")
-    
-    # Generar mapa (la función carga los límites administrativos internamente)
-    ruta_mapa = generar_mapa_elementos_expuestos(
-        usuario_prueba,
-        departamento_prueba,
-        provincia_prueba,
-        distrito_prueba
-    )
-    
-    if ruta_mapa:
-        print(f"\n✅ PRUEBA EXITOSA")
-        print(f"   Mapa guardado en: {ruta_mapa}")
-    else:
-        print(f"\n❌ PRUEBA FALLIDA")

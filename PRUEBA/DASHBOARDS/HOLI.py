@@ -3,7 +3,8 @@
 
 
 
-
+# /opt/conda/envs/vic/bin/pip install dash dash_bootstrap_components geopandas contextily matplotlib_scalebar
+# /opt/conda/envs/vic/bin/pip install whitebox
 #### X SEA CASO
 
 #pip install dash

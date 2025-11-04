@@ -33,7 +33,7 @@ except ImportError:
     print("⚠️ WhiteboxTools o rasterio no disponibles. Instalando...")
 
 # --- CONFIGURACIÓN GLOBAL ---
-ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
+ruta_base = "/workspaces/SIG-AUTOMATIZACION/PRUEBA"
 AMARILLO_CLARO = "#FFEE58"
 
 # RUTAS BASE DE LAS CAPAS DE PELIGRO
@@ -43,11 +43,11 @@ RUTA_BASE_PPMAX = f"{ruta_base}/DATA/PELIGRO/PP_MAX"
 RUTA_BASE_RIOS = f"{ruta_base}/DATA/PELIGRO/DISTANCIA_RIO"
 RUTA_BASE_GEOLOGIA = f"{ruta_base}/DATA/PELIGRO/GEOLOGIA"
 RUTA_DEM = f"{RUTA_BASE_RIOS}/DEM.tif"
-RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS POBLADOS /Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
+RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS POBLADOS/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
 
 # CONFIGURACIÓN DE GENERACIÓN DE RÍOS
 INTENSIDAD_RIOS = "muy_baja"  # Opciones: "muy_alta", "alta", "media", "baja", "muy_baja"
-UMBRALES_RIOS = {"muy_alta": 50, "alta": 200, "media": 500, "baja": 1000, "muy_baja": 1500}
+UMBRALES_RIOS = {"muy_alta": 50, "alta": 200, "media": 500, "baja": 1000, "muy_baja": 2000}
 
 # CONFIGURACIÓN DE BUFFERS CON PESOS
 BUFFERS_CONFIG = [
@@ -63,124 +63,9 @@ COLORES_PELIGRO = ['#00FF00', '#FFFF00', '#FFA500', '#FF0000']
 ETIQUETAS_PELIGRO = ['Baja', 'Media', 'Alta', 'Muy Alta']
 RANGOS_PELIGRO = [1.00, 2.00, 3.00, 4.00, 5.00]
 
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-
-def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblados, ax, radio_offset=0.08):
-    """
-    Agrega etiquetas de centros poblados FUERA del límite distrital de manera ordenada.
-    Las etiquetas salen perpendiculares al límite sin cruzarlo.
-    
-    Parámetros:
-    -----------
-    gdf_distritos : GeoDataFrame
-        GeoDataFrame con los polígonos de distritos
-    gdf_centros_poblados : GeoDataFrame
-        GeoDataFrame con los puntos de centros poblados
-    ax : matplotlib.axes.Axes
-        Eje de matplotlib donde dibujar
-    radio_offset : float
-        Distancia de separación de la etiqueta del límite
-    """
-    
-    if gdf_centros_poblados is None or len(gdf_centros_poblados) == 0:
-        return
-    
-    # Obtener el límite del distrito como línea
-    distrito_boundary = gdf_distritos.boundary.unary_union
-    
-    # Calcular centroide del distrito
-    try:
-        distrito_merged = gdf_distritos.unary_union
-        centroide = distrito_merged.centroid
-    except:
-        centroide = gdf_distritos.geometry.centroid.iloc[0]
-    
-    # Obtener límites del distrito para calcular escala
-    minx, miny, maxx, maxy = gdf_distritos.total_bounds
-    ancho_distrito = maxx - minx
-    alto_distrito = maxy - miny
-    escala = max(ancho_distrito, alto_distrito)
-    
-    # Distancia perpendicular del límite
-    offset_perpendicular = escala * radio_offset
-    
-    for idx, (i, row) in enumerate(gdf_centros_poblados.iterrows()):
-        try:
-            punto = row.geometry
-            
-            # Buscar nombre en diferentes columnas posibles
-            nombre = None
-            for col in ['NOMB_CCPP', 'NOMBRE', 'NOMBCCPP', 'CCPP', 'NAME', 'nombre']:
-                if col in row.index and pd.notna(row[col]):
-                    nombre = str(row[col]).strip()
-                    if nombre:
-                        break
-            
-            if not nombre:
-                nombre = f'Centro {idx}'
-            
-            # Coordenadas del punto original
-            x_orig, y_orig = punto.x, punto.y
-            
-            # Encontrar el punto más cercano en el límite del distrito
-            punto_limite = distrito_boundary.interpolate(
-                distrito_boundary.project(punto)
-            )
-            
-            # Calcular vector desde el centroide al punto
-            dx = x_orig - centroide.x
-            dy = y_orig - centroide.y
-            dist_vec = np.sqrt(dx**2 + dy**2)
-            
-            if dist_vec > 0:
-                # Normalizar vector
-                dx_norm = dx / dist_vec
-                dy_norm = dy / dist_vec
-            else:
-                dx_norm, dy_norm = 1, 0
-            
-            # Calcular posición de la etiqueta FUERA del límite
-            x_label = punto_limite.x + dx_norm * offset_perpendicular
-            y_label = punto_limite.y + dy_norm * offset_perpendicular
-            
-            # Dibujar línea delgada sólida desde el punto hasta la etiqueta
-            ax.plot(
-                [x_orig, x_label],
-                [y_orig, y_label],
-                'k-',  # Línea negra sólida
-                linewidth=0.45,
-                alpha=0.6,
-                zorder=5
-            )
-            
-            # Agregar punto pequeño en la ubicación original (dentro del distrito)
-            ax.plot(x_orig, y_orig, 'o', color='#006400', markersize=4, zorder=6)
-            
-            # Agregar etiqueta con fondo FUERA del distrito
-            ax.text(
-                x_label, y_label,
-                nombre,
-                fontsize=5.8,
-                fontweight='bold',
-                ha='center',
-                va='center',
-                bbox=dict(
-                    boxstyle='round,pad=0.3',
-                    facecolor='yellow',
-                    edgecolor='black',
-                    alpha=0.93,
-                    linewidth=0.5
-                ),
-                zorder=8
-            )
-        except Exception as e:
-            continue
-
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# FUNCIONES PARA GENERAR RED DE RÍOS Y BUFFERS
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
+# 🌊 FUNCIONES PARA GENERAR RED DE RÍOS Y BUFFERS
+# ═══════════════════════════════════════════════════════════════════════════
 
 def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_folder="/tmp/hydro_temp"):
     """
@@ -196,7 +81,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
     """
     
     if not HYDRO_AVAILABLE:
-        print("⌀ WhiteboxTools no está disponible. No se puede generar el shapefile de ríos.")
+        print("❌ WhiteboxTools no está disponible. No se puede generar el shapefile de ríos.")
         return None
     
     print("\n" + "="*80)
@@ -215,7 +100,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
     
     # Verificar que existe el DEM
     if not os.path.exists(RUTA_DEM):
-        print(f"⌀ No se encontró el DEM en: {RUTA_DEM}")
+        print(f"❌ No se encontró el DEM en: {RUTA_DEM}")
         return None
     
     print(f"[1/6] ✂️ Recortando DEM al distrito...")
@@ -274,7 +159,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         print("      ✅ DEM recortado exitosamente")
         
     except Exception as e:
-        print(f"⌀ Error recortando DEM: {e}")
+        print(f"❌ Error recortando DEM: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -336,7 +221,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         print(f"      ✅ Procesamiento hidrológico completado")
         
     except Exception as e:
-        print(f"⌀ Error en procesamiento hidrológico: {e}")
+        print(f"❌ Error en procesamiento hidrológico: {e}")
         print(f"   💡 Sugerencias:")
         print(f"      - Verifica que el DEM sea válido")
         print(f"      - Prueba con INTENSIDAD_RIOS = 'baja' o 'muy_baja' (más rápido)")
@@ -347,7 +232,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         return None
     
     # [3/6] Cargar y recortar ríos
-    print(f"[3/6] 🌀 Cargando red de ríos...")
+    print(f"[3/6] 📍 Cargando red de ríos...")
     
     try:
         rivers = gpd.read_file(streams_vector)
@@ -365,7 +250,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         print(f"      ✅ {len(rivers_clip)} segmentos de ríos")
         
     except Exception as e:
-        print(f"⌀ Error cargando ríos: {e}")
+        print(f"❌ Error cargando ríos: {e}")
         return None
     
     # [4/6] Generar buffers con pesos
@@ -411,17 +296,17 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         print(f"      ✅ {len(buffers_gdf)} clases de buffers generadas")
         
     except Exception as e:
-        print(f"⌀ Error generando buffers: {e}")
+        print(f"❌ Error generando buffers: {e}")
         return None
     
     # [5/6] Convertir a CRS 3857
-    print(f"[5/6] 📡 Convirtiendo a CRS 3857...")
+    print(f"[5/6] 🔄 Convirtiendo a CRS 3857...")
     
     try:
         buffers_gdf = buffers_gdf.to_crs(epsg=3857)
         print(f"      ✅ CRS convertido")
     except Exception as e:
-        print(f"⌀ Error convirtiendo CRS: {e}")
+        print(f"❌ Error convirtiendo CRS: {e}")
         return None
     
     # [6/6] Guardar shapefile
@@ -453,12 +338,12 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         return output_shp
         
     except Exception as e:
-        print(f"⌀ Error guardando shapefile: {e}")
+        print(f"❌ Error guardando shapefile: {e}")
         return None
 
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
 # FUNCIONES AUXILIARES PARA MAPAS
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
 
 def add_north_arrow_blanco_completo(ax, xy_pos=(0.93, 0.08), size=0.06):
     x_pos, y_pos = xy_pos
@@ -531,7 +416,7 @@ def add_membrete(ax, dpto, prov, dist, main_map_ax, fig_obj):
     ax.text(2.5 + padding, 2.0, info["PROVINCIA"], va='center', fontsize=8)
     ax.text(5 + padding, 2.6, "DISTRITO:", fontweight='bold', va='center', fontsize=8)
     ax.text(5 + padding, 2.0, info["DISTRITO"], va='center', fontsize=8)
-    ax.text(7.5 + padding, 2.5, "MAPA Nº", fontweight='bold', ha='left', va='center', fontsize=8)
+    ax.text(7.5 + padding, 2.5, "MAPA N°", fontweight='bold', ha='left', va='center', fontsize=8)
     ax.text(7.5 + padding, 0.8, info["MAPA_N"], ha='left', va='center', fontsize=10)
     ax.text(0 + padding, 1.0, "ESCALA:", fontweight='bold', va='center', fontsize=8)
     ax.text(0 + padding, 0.5, info["ESCALA"], va='center', fontsize=8)
@@ -709,7 +594,7 @@ def buscar_archivo_peligro(ruta_base, patron_busqueda, tipo_capa):
                 print(f"      ✅ Encontrado: {ruta_completa}")
     
     if not archivos_encontrados:
-        print(f"      ⌀ No se encontraron archivos para {tipo_capa}")
+        print(f"      ❌ No se encontraron archivos para {tipo_capa}")
         return None
     
     if len(archivos_encontrados) > 1:
@@ -730,9 +615,9 @@ def asignar_color_peligro(valor):
     else:
         return COLORES_PELIGRO[0]
 
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
 # 🎯 FUNCIÓN PRINCIPAL CON 5 PARÁMETROS + CENTROS POBLADOS
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════
 
 def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distrito_sel):
     print("\n" + "="*80)
@@ -748,7 +633,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         os.makedirs(carpeta_salida, exist_ok=True)
         print(f"   - Carpeta de salida verificada: {carpeta_salida}")
     except Exception as e:
-        print(f"⌀ Error creando la estructura de carpetas para el usuario: {e}")
+        print(f"❌ Error creando la estructura de carpetas para el usuario: {e}")
         return None
 
     print("\n📦 Cargando capas base...")
@@ -781,7 +666,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         gdf_oceano = None
 
     if gdf_departamentos is None or gdf_provincias is None or gdf_distritos is None:
-        print("⌀ Faltan capas base. Abortando.")
+        print("❌ Faltan capas base. Abortando.")
         return None
 
     col_dpto = next((c for c in ['NOMBDEP', 'DEPARTAMEN'] if c in gdf_departamentos.columns), None)
@@ -789,7 +674,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     col_distr = next((c for c in ['NOMBDIST', 'DISTRITO'] if c in gdf_distritos.columns), None)
 
     if not all([col_dpto, col_prov, col_distr]):
-        print("⌀ No se pudieron identificar las columnas de nombres")
+        print("❌ No se pudieron identificar las columnas de nombres")
         return None
 
     print("\n🔍 Filtrando datos del área seleccionada...")
@@ -800,7 +685,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     gdf_distritos_en_provincia = gdf_distritos[gdf_distritos[col_prov] == provincia_sel]
 
     if gdf_distrito.empty:
-        print(f"⌀ Error: No se pudo encontrar la geometría para el distrito '{distrito_sel}'.")
+        print(f"❌ Error: No se pudo encontrar la geometría para el distrito '{distrito_sel}'.")
         return None
 
     print(f"   ✅ Distrito encontrado con geometría válida")
@@ -819,14 +704,14 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         respuesta = input("   Seleccione (U/R) [por defecto: U]: ").strip().upper()
         
         if respuesta == 'R':
-            print("   📡 Regenerando shapefile de ríos...")
+            print("   🔄 Regenerando shapefile de ríos...")
             ruta_rios = generar_shapefile_rios_con_pesos(
                 gdf_distrito, 
                 RUTA_BASE_RIOS,
                 temp_folder=os.path.join(carpeta_usuario, "temp_hydro")
             )
             if not ruta_rios:
-                print("⌀ Error generando shapefile de ríos")
+                print("❌ Error generando shapefile de ríos")
                 return None
         else:
             print("   ✅ Usando shapefile existente")
@@ -838,7 +723,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             temp_folder=os.path.join(carpeta_usuario, "temp_hydro")
         )
         if not ruta_rios:
-            print("⌀ Error generando shapefile de ríos")
+            print("❌ Error generando shapefile de ríos")
             return None
 
     # 🆕 CARGAR LAS CINCO CAPAS DE PELIGRO
@@ -929,7 +814,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         print(f"\n   ✅ Todas las 5 capas cargadas exitosamente")
         
     except Exception as e:
-        print(f"\n⌀ Error cargando capas de peligro: {e}")
+        print(f"\n❌ Error cargando capas de peligro: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -951,11 +836,11 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         print(f"      - Geología: {len(gdf_geologia_clip)} registros")
         
     except Exception as e:
-        print(f"⌀ Error recortando capas: {e}")
+        print(f"❌ Error recortando capas: {e}")
         return None
 
     # 🆕 COMBINAR LAS CINCO CAPAS MEDIANTE INTERSECCIÓN
-    print("\n📡 Combinando capas de peligro (5 parámetros)...")
+    print("\n🔄 Combinando capas de peligro (5 parámetros)...")
     try:
         # Intersección de las cinco capas
         print("   [1/5] Intersectando Pendiente ∩ Geomorfología...")
@@ -1016,14 +901,14 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         
         # 🆕 MOSTRAR ESTADÍSTICAS DETALLADAS DE CADA PARÁMETRO
         print(f"\n   📊 Estadísticas ANTES del promedio:")
-        print(f"      - Pendiente: min={gdf_peligro[col_pendi].min():.2f}, max={gdf_peligro[col_pendi].max():.2f}, media={gdf_peligro[col_pendi].mean():.2f}")
-        print(f"      - Geomorfología: min={gdf_peligro[col_geomo].min():.2f}, max={gdf_peligro[col_geomo].max():.2f}, media={gdf_peligro[col_geomo].mean():.2f}")
-        print(f"      - PP Máxima: min={gdf_peligro[col_ppmax].min():.2f}, max={gdf_peligro[col_ppmax].max():.2f}, media={gdf_peligro[col_ppmax].mean():.2f}")
-        print(f"      - Distancia Ríos: min={gdf_peligro[col_rio].min():.2f}, max={gdf_peligro[col_rio].max():.2f}, media={gdf_peligro[col_rio].mean():.2f}")
-        print(f"      - Geología: min={gdf_peligro[col_geol].min():.2f}, max={gdf_peligro[col_geol].max():.2f}, media={gdf_peligro[col_geol].mean():.2f}")
+        print(f"      - {col_pendi}: min={gdf_peligro[col_pendi].min():.2f}, max={gdf_peligro[col_pendi].max():.2f}, media={gdf_peligro[col_pendi].mean():.2f}")
+        print(f"      - {col_geomo}: min={gdf_peligro[col_geomo].min():.2f}, max={gdf_peligro[col_geomo].max():.2f}, media={gdf_peligro[col_geomo].mean():.2f}")
+        print(f"      - {col_ppmax}: min={gdf_peligro[col_ppmax].min():.2f}, max={gdf_peligro[col_ppmax].max():.2f}, media={gdf_peligro[col_ppmax].mean():.2f}")
+        print(f"      - {col_rio}: min={gdf_peligro[col_rio].min():.2f}, max={gdf_peligro[col_rio].max():.2f}, media={gdf_peligro[col_rio].mean():.2f}")
+        print(f"      - {col_geol}: min={gdf_peligro[col_geol].min():.2f}, max={gdf_peligro[col_geol].max():.2f}, media={gdf_peligro[col_geol].mean():.2f}")
         
         print(f"\n   📊 Estadísticas DESPUÉS del promedio (PELIGRO):")
-        print(f"      - Peligro Final: min={gdf_peligro['PELIGRO'].min():.3f}, max={gdf_peligro['PELIGRO'].max():.3f}, media={gdf_peligro['PELIGRO'].mean():.3f}")
+        print(f"      - Peligro: min={gdf_peligro['PELIGRO'].min():.3f}, max={gdf_peligro['PELIGRO'].max():.3f}, media={gdf_peligro['PELIGRO'].mean():.3f}")
         
         # 🆕 MOSTRAR DISTRIBUCIÓN POR NIVEL DE PELIGRO
         print(f"\n   📊 Distribución por nivel de peligro:")
@@ -1049,7 +934,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         print(f"   💾 Shapefile de debug guardado: {debug_shp}")
         
     except Exception as e:
-        print(f"⌀ Error combinando capas: {e}")
+        print(f"❌ Error combinando capas: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -1121,10 +1006,28 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
                                     alpha=0.95,
                                     zorder=10)
                 
-                # 🎯 AGREGAR ETIQUETAS PERPENDICULARES AL LÍMITE DISTRITAL
-                agregar_etiquetas_ordenadas_circularmente(gdf_distrito, centros_en_mapa, ax_main, radio_offset=0.06)
+                # Agregar etiquetas de nombres si existe la columna
+                nombre_col = None
+                for col in ['NOMB_CCPP', 'NOMBRE', 'NOMBCCPP', 'CCPP', 'NAME']:
+                    if col in centros_en_mapa.columns:
+                        nombre_col = col
+                        break
                 
-                print(f"      ✅ {len(centros_en_mapa)} centros poblados etiquetados")
+                if nombre_col:
+                    for idx, row in centros_en_mapa.iterrows():
+                        x, y = row.geometry.x, row.geometry.y
+                        nombre = str(row[nombre_col])
+                        ax_main.annotate(nombre, 
+                                       xy=(x, y), 
+                                       xytext=(5, 5),
+                                       textcoords='offset points',
+                                       fontsize=6,
+                                       color='#006400',  # Verde oscuro
+                                       weight='bold',
+                                       path_effects=[path_effects.withStroke(linewidth=2.5, foreground='white')],
+                                       zorder=11)
+                
+                print(f"      ✅ {len(centros_en_mapa)} centros poblados agregados al mapa")
             else:
                 print(f"      ⚠️ No hay centros poblados en el área del distrito")
         except Exception as e:
@@ -1151,13 +1054,21 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     legend_elements = [Patch(facecolor='white', edgecolor='white', label='SUSCEPTIBILIDAD:', linewidth=0)]
     
     legend_elements.extend([
-        Patch(facecolor=COLORES_PELIGRO[3], edgecolor='black', label='Muy Alta'), 
-        Patch(facecolor=COLORES_PELIGRO[2], edgecolor='black', label='Alta'),
-        Patch(facecolor=COLORES_PELIGRO[1], edgecolor='black', label='Media'),
-        Patch(facecolor=COLORES_PELIGRO[0], edgecolor='black', label='Baja')
+        Patch(facecolor=COLORES_PELIGRO[0], edgecolor='black', label='Baja (1.00 - 2.00)'),
+        Patch(facecolor=COLORES_PELIGRO[1], edgecolor='black', label='Media (2.00 - 3.00)'),
+        Patch(facecolor=COLORES_PELIGRO[2], edgecolor='black', label='Alta (3.00 - 4.00)'),
+        Patch(facecolor=COLORES_PELIGRO[3], edgecolor='black', label='Muy Alta (4.00 - 5.00)')
     ])
 
     legend_elements.extend([
+        Patch(facecolor='white', edgecolor='white', label='', linewidth=0),
+        Patch(facecolor='white', edgecolor='white', label='PARÁMETROS:', linewidth=0),
+        Patch(facecolor='white', edgecolor='white', label='• Pendiente', linewidth=0),
+        Patch(facecolor='white', edgecolor='white', label='• Geomorfología', linewidth=0),
+        Patch(facecolor='white', edgecolor='white', label='• PP Máxima', linewidth=0),
+        Patch(facecolor='white', edgecolor='white', label='• Distancia a Ríos', linewidth=0),
+        Patch(facecolor='white', edgecolor='white', label='• Geología', linewidth=0),
+        Patch(facecolor='white', edgecolor='white', label='', linewidth=0),
         Line2D([0], [0], color='black', lw=1.5, linestyle='-', label='Límite Distrital'),
         Line2D([0], [0], marker='o', color='w', markerfacecolor='#006400',  # Verde oscuro
                markeredgecolor='white', markersize=7, linestyle='None', 
@@ -1217,18 +1128,18 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         if os.path.exists(ruta_guardado_final):
             file_size = os.path.getsize(ruta_guardado_final) / (1024 * 1024)
             print(f"✅ Mapa de peligro guardado exitosamente")
-            print(f"   📁 Ubicación: {ruta_guardado_final}")
+            print(f"   📂 Ubicación: {ruta_guardado_final}")
             print(f"   📊 Tamaño: {file_size:.2f} MB")
             print(f"   🎯 Parámetros: 5 (Pendiente + Geomorfología + PP Máxima + Distancia a Ríos + Geología)")
-            print(f"   🏘️ Centros poblados: Incluidos con etiquetas circulares")
+            print(f"   🏘️ Centros poblados: Incluidos")
             print("="*80 + "\n")
             return ruta_guardado_final
         else:
-            print("⌀ El archivo no se guardó correctamente")
+            print("❌ El archivo no se guardó correctamente")
             return None
 
     except Exception as e:
-        print(f"⌀ Error al guardar el archivo: {e}")
+        print(f"❌ Error al guardar el archivo: {e}")
         import traceback
         traceback.print_exc()
         plt.close(fig)

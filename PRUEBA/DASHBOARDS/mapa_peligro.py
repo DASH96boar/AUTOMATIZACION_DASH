@@ -33,7 +33,7 @@ except ImportError:
     print("⚠️ WhiteboxTools o rasterio no disponibles. Instalando...")
 
 # --- CONFIGURACIÓN GLOBAL ---
-ruta_base = "/workspaces/SIG-AUTOMATIZACION/PRUEBA"
+ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 AMARILLO_CLARO = "#FFEE58"
 
 # RUTAS BASE DE LAS CAPAS DE PELIGRO
@@ -43,11 +43,11 @@ RUTA_BASE_PPMAX = f"{ruta_base}/DATA/PELIGRO/PP_MAX"
 RUTA_BASE_RIOS = f"{ruta_base}/DATA/PELIGRO/DISTANCIA_RIO"
 RUTA_BASE_GEOLOGIA = f"{ruta_base}/DATA/PELIGRO/GEOLOGIA"
 RUTA_DEM = f"{RUTA_BASE_RIOS}/DEM.tif"
-RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS POBLADOS/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
+RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS POBLADOS /Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
 
 # CONFIGURACIÓN DE GENERACIÓN DE RÍOS
 INTENSIDAD_RIOS = "muy_baja"  # Opciones: "muy_alta", "alta", "media", "baja", "muy_baja"
-UMBRALES_RIOS = {"muy_alta": 50, "alta": 200, "media": 500, "baja": 1000, "muy_baja": 2000}
+UMBRALES_RIOS = {"muy_alta": 50, "alta": 200, "media": 500, "baja": 1000, "muy_baja": 1500}
 
 # CONFIGURACIÓN DE BUFFERS CON PESOS
 BUFFERS_CONFIG = [
@@ -1144,3 +1144,4 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         traceback.print_exc()
         plt.close(fig)
         return None
+    

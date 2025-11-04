@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 🎯 SCRIPT MEJORADO: MAPA DE ELEMENTOS EXPUESTOS
-- Sigue la estructura de mapa_peligro.py
-- Recibe GeoDataFrames pre-cargados
+- Estructura idéntica a mapa_peligro.py (que funciona correctamente)
+- Carga límites administrativos internamente
 - Búsqueda inteligente de archivos
 - Manejo robusto de errores
 """
@@ -43,12 +43,12 @@ COLORES_ELEMENTOS = {
     'via_vecinal': '#FFD700'         # Oro
 }
 
-# ═══════════════════════════════════════════════════════════════════════
-# 🛠️ FUNCIONES AUXILIARES MEJORADAS
-# ═══════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# 🛠️ FUNCIONES AUXILIARES (IDÉNTICAS A mapa_peligro.py)
+# ══════════════════════════════════════════════════════════════════════════════
 
 def normalizar_texto(texto):
-    """Normaliza texto para comparaciones (sin tildes, mayúsculas, espacios)"""
+    """Normaliza texto para comparaciones"""
     if pd.isna(texto):
         return ""
     texto = str(texto).upper().strip()
@@ -56,20 +56,33 @@ def normalizar_texto(texto):
     texto = ''.join(char for char in texto if unicodedata.category(char) != 'Mn')
     return texto
 
+def buscar_shapefile(nombre_busqueda):
+    """Busca shapefiles en toda la estructura (igual que mapa_peligro.py)"""
+    for root, _, files in os.walk(ruta_base):
+        for file in files:
+            if file.lower().endswith(".shp") and nombre_busqueda.lower() in file.lower():
+                return os.path.join(root, file)
+    return None
+
+def cargar_shapefile(nombre, alias):
+    """Carga shapefile con manejo de CRS (igual que mapa_peligro.py)"""
+    path = buscar_shapefile(nombre)
+    if not path:
+        print(f"   ⚠️  No se encontró shapefile: {alias}")
+        return None
+    try:
+        gdf = gpd.read_file(path)
+        if gdf.crs is None or gdf.crs.to_epsg() != 4326:
+            gdf.set_crs(epsg=4326, inplace=True)
+        gdf_3857 = gdf.to_crs(epsg=3857)
+        print(f"   ✅ {alias} cargado: {len(gdf_3857)} registros")
+        return gdf_3857
+    except Exception as e:
+        print(f"   ❌ Error cargando {alias}: {e}")
+        return None
+
 def buscar_shapefile_inteligente(ruta_base, patrones_busqueda, nombre_tipo):
-    """
-    Busca shapefiles de forma inteligente con múltiples patrones
-    
-    Args:
-        ruta_base: Carpeta base donde buscar
-        patrones_busqueda: Lista de strings para buscar
-        nombre_tipo: Nombre descriptivo para logs
-    
-    Returns:
-        Ruta del archivo encontrado o None
-    """
-    print(f"   🔍 Buscando {nombre_tipo}...")
-    
+    """Busca shapefiles con múltiples patrones"""
     if not os.path.exists(ruta_base):
         print(f"      ⚠️  Carpeta no existe: {ruta_base}")
         return None
@@ -83,54 +96,32 @@ def buscar_shapefile_inteligente(ruta_base, patrones_busqueda, nombre_tipo):
             
             file_normalizado = normalizar_texto(file)
             
-            # Buscar cualquier patrón
             for patron in patrones_busqueda:
                 patron_normalizado = normalizar_texto(patron)
                 if patron_normalizado in file_normalizado:
                     ruta_completa = os.path.join(root, file)
                     archivos_encontrados.append(ruta_completa)
-                    print(f"      ✅ Encontrado: {os.path.basename(file)}")
                     break
     
     if not archivos_encontrados:
-        print(f"      ❌ No se encontró {nombre_tipo}")
-        print(f"         Patrones buscados: {patrones_busqueda}")
         return None
-    
-    if len(archivos_encontrados) > 1:
-        print(f"      ⚠️  Múltiples archivos encontrados, usando el primero")
     
     return archivos_encontrados[0]
 
 def cargar_y_preparar_shapefile(ruta, nombre_elemento, target_crs=3857):
-    """
-    Carga shapefile y lo prepara (CRS, validación)
-    
-    Args:
-        ruta: Ruta del shapefile
-        nombre_elemento: Nombre para logs
-        target_crs: CRS objetivo (por defecto 3857)
-    
-    Returns:
-        GeoDataFrame o None si falla
-    """
+    """Carga shapefile y lo prepara"""
     if not ruta or not os.path.exists(ruta):
-        print(f"      ⚠️  Archivo no existe: {nombre_elemento}")
         return None
     
     try:
         gdf = gpd.read_file(ruta)
         
-        # Configurar CRS si no existe
         if gdf.crs is None:
-            print(f"      ⚠️  Sin CRS, asumiendo EPSG:4326")
             gdf.set_crs(epsg=4326, inplace=True)
         
-        # Convertir a CRS objetivo
         if gdf.crs.to_epsg() != target_crs:
             gdf = gdf.to_crs(epsg=target_crs)
         
-        print(f"      ✅ {nombre_elemento}: {len(gdf)} registros (CRS: {target_crs})")
         return gdf
     
     except Exception as e:
@@ -138,22 +129,11 @@ def cargar_y_preparar_shapefile(ruta, nombre_elemento, target_crs=3857):
         return None
 
 def encontrar_columna_nombre(gdf, opciones_columnas):
-    """
-    Encuentra la columna de nombre en un GeoDataFrame
-    
-    Args:
-        gdf: GeoDataFrame
-        opciones_columnas: Lista de posibles nombres de columna
-    
-    Returns:
-        Nombre de columna encontrada o None
-    """
-    # Buscar coincidencia exacta
+    """Encuentra la columna de nombre en un GeoDataFrame"""
     for col in opciones_columnas:
         if col in gdf.columns:
             return col
     
-    # Buscar coincidencia parcial
     for col in gdf.columns:
         col_norm = normalizar_texto(col)
         for opcion in opciones_columnas:
@@ -161,54 +141,15 @@ def encontrar_columna_nombre(gdf, opciones_columnas):
             if opcion_norm in col_norm or col_norm in opcion_norm:
                 return col
     
-    # Fallback: primera columna no geométrica
     for col in gdf.columns:
         if col != 'geometry' and gdf[col].dtype == 'object':
-            print(f"      ⚠️  Usando columna fallback: {col}")
             return col
     
     return None
 
-def filtrar_geodataframe_por_nombre(gdf, columna, valor_buscado, nombre_tipo="elemento"):
-    """
-    Filtra GeoDataFrame por nombre con normalización
-    
-    Args:
-        gdf: GeoDataFrame a filtrar
-        columna: Nombre de columna para filtrar
-        valor_buscado: Valor a buscar
-        nombre_tipo: Tipo de elemento (para logs)
-    
-    Returns:
-        GeoDataFrame filtrado
-    """
-    if columna not in gdf.columns:
-        raise ValueError(f"Columna '{columna}' no existe en {nombre_tipo}")
-    
-    valor_normalizado = normalizar_texto(valor_buscado)
-    
-    # Intentar coincidencia exacta
-    gdf_filtrado = gdf[gdf[columna].apply(normalizar_texto) == valor_normalizado].copy()
-    
-    if len(gdf_filtrado) == 0:
-        # Intentar coincidencia parcial
-        gdf_filtrado = gdf[
-            gdf[columna].apply(lambda x: valor_normalizado in normalizar_texto(x))
-        ].copy()
-        
-        if len(gdf_filtrado) == 0:
-            # Mostrar valores disponibles
-            valores_disponibles = sorted(gdf[columna].unique()[:10])
-            raise ValueError(
-                f"No se encontró '{valor_buscado}' en {nombre_tipo}. "
-                f"Ejemplos: {', '.join(map(str, valores_disponibles))}"
-            )
-    
-    return gdf_filtrado
-
-# ═══════════════════════════════════════════════════════════════════════
-# 📐 FUNCIONES DE VISUALIZACIÓN (IDÉNTICAS A MAPA_PELIGRO)
-# ═══════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# 🗺️ FUNCIONES DE VISUALIZACIÓN (IDÉNTICAS A mapa_peligro.py)
+# ══════════════════════════════════════════════════════════════════════════════
 
 def add_north_arrow_blanco_completo(ax, xy_pos=(0.93, 0.08), size=0.06):
     """Agrega flecha de norte al mapa"""
@@ -324,29 +265,14 @@ def grillado_utm_proyectado(ax, bbox, ndiv=8):
         label.set_verticalalignment('center')
         label.set_horizontalalignment('right')
 
-# ═══════════════════════════════════════════════════════════════════════
-# 🎯 FUNCIÓN PRINCIPAL MEJORADA
-# ═══════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
+# 🎯 FUNCIÓN PRINCIPAL (ESTRUCTURA DE mapa_peligro.py)
+# ══════════════════════════════════════════════════════════════════════════════
 
-def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia_sel, 
-                                     distrito_sel, gdf_distrito, gdf_departamentos, 
-                                     gdf_provincias, gdf_paises=None, gdf_oceano=None):
+def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia_sel, distrito_sel):
     """
     Genera mapa de elementos expuestos siguiendo estructura de mapa_peligro.py
-    
-    Args:
-        nombre_usuario: Nombre del usuario
-        departamento_sel: Nombre del departamento
-        provincia_sel: Nombre de la provincia
-        distrito_sel: Nombre del distrito
-        gdf_distrito: GeoDataFrame del distrito (pre-filtrado)
-        gdf_departamentos: GeoDataFrame de todos los departamentos
-        gdf_provincias: GeoDataFrame de todas las provincias
-        gdf_paises: GeoDataFrame de países (opcional)
-        gdf_oceano: GeoDataFrame de océano (opcional)
-    
-    Returns:
-        Ruta del archivo generado o None si falla
+    CARGA LOS LÍMITES ADMINISTRATIVOS INTERNAMENTE
     """
     print("\n" + "="*80)
     print("🗺️ INICIANDO GENERACIÓN DE MAPA DE ELEMENTOS EXPUESTOS")
@@ -354,9 +280,9 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     print(f"   - Usuario: {nombre_usuario}")
     print(f"   - Ubicación: {distrito_sel}, {provincia_sel}, {departamento_sel}")
 
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     # PASO 1: CREAR ESTRUCTURA DE CARPETAS
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     try:
         carpeta_usuario = os.path.join(ruta_base, "USUARIOS", nombre_usuario)
         carpeta_salida = os.path.join(carpeta_usuario, "ELEMENTOS EXPUESTOS")
@@ -366,14 +292,53 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
         print(f"❌ Error creando carpeta: {e}")
         return None
 
-    # ═══════════════════════════════════════════════════════════════════
-    # PASO 2: CARGAR ELEMENTOS EXPUESTOS CON BÚSQUEDA INTELIGENTE
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # PASO 2: CARGAR LÍMITES ADMINISTRATIVOS (IGUAL QUE mapa_peligro.py)
+    # ══════════════════════════════════════════════════════════════════════════
+    print("\n📦 Cargando límites administrativos...")
+    gdf_departamentos = cargar_shapefile("departamento", "Departamentos")
+    gdf_provincias = cargar_shapefile("provincia", "Provincias")
+    gdf_distritos = cargar_shapefile("distrito", "Distritos")
+
+    if gdf_departamentos is None or gdf_provincias is None or gdf_distritos is None:
+        print("❌ Faltan capas base. Abortando.")
+        return None
+
+    # Detectar columnas
+    col_dpto = next((c for c in ['NOMBDEP', 'DEPARTAMEN'] if c in gdf_departamentos.columns), None)
+    col_prov = next((c for c in ['NOMBPROV', 'PROVINCIA'] if c in gdf_provincias.columns), None)
+    col_distr = next((c for c in ['NOMBDIST', 'DISTRITO'] if c in gdf_distritos.columns), None)
+
+    if not all([col_dpto, col_prov, col_distr]):
+        print("❌ No se pudieron identificar las columnas de nombres")
+        return None
+
+    print(f"   ✅ Columnas detectadas: {col_dpto}, {col_prov}, {col_distr}")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PASO 3: FILTRAR ÁREA SELECCIONADA
+    # ══════════════════════════════════════════════════════════════════════════
+    print("\n🔍 Filtrando datos del área seleccionada...")
+    gdf_dpto_sel = gdf_departamentos[gdf_departamentos[col_dpto] == departamento_sel]
+    gdf_prov_sel = gdf_provincias[gdf_provincias[col_prov] == provincia_sel]
+    gdf_distrito = gdf_distritos[(gdf_distritos[col_distr] == distrito_sel) & 
+                                  (gdf_distritos[col_prov] == provincia_sel)]
+
+    if gdf_distrito.empty:
+        print(f"❌ Error: No se pudo encontrar el distrito '{distrito_sel}'")
+        return None
+
+    print(f"   ✅ Distrito encontrado con geometría válida")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # PASO 4: CARGAR ELEMENTOS EXPUESTOS
+    # ══════════════════════════════════════════════════════════════════════════
     print("\n📦 Cargando elementos expuestos...")
     
     elementos_cargados = {}
     
     # 1️⃣ AGRÍCOLA
+    print(f"   🔍 Buscando Zona Agrícola...")
     ruta_agricola = buscar_shapefile_inteligente(
         RUTA_BASE_AGRICOLA,
         ['agricola', 'agric', provincia_sel],
@@ -383,8 +348,10 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
         gdf_agricola = cargar_y_preparar_shapefile(ruta_agricola, "Agrícola")
         if gdf_agricola is not None:
             elementos_cargados['agricola'] = gdf_agricola
+            print(f"      ✅ Agrícola: {len(gdf_agricola)} polígonos")
     
     # 2️⃣ CENTROS POBLADOS
+    print(f"   🔍 Buscando Centros Poblados...")
     ruta_cp = buscar_shapefile_inteligente(
         RUTA_BASE_CP,
         ['cpoblado', 'centro_poblado', 'cp', provincia_sel],
@@ -394,8 +361,10 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
         gdf_cp = cargar_y_preparar_shapefile(ruta_cp, "Centros Poblados")
         if gdf_cp is not None:
             elementos_cargados['cp'] = gdf_cp
+            print(f"      ✅ Centros Poblados: {len(gdf_cp)} puntos")
     
     # 3️⃣ INFRAESTRUCTURA EDUCATIVA
+    print(f"   🔍 Buscando Infraestructura Educativa...")
     ruta_ie = buscar_shapefile_inteligente(
         RUTA_BASE_IE,
         ['ie', 'infraestructura_educativa', provincia_sel],
@@ -405,6 +374,7 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
         gdf_ie = cargar_y_preparar_shapefile(ruta_ie, "IE")
         if gdf_ie is not None:
             elementos_cargados['ie'] = gdf_ie
+            print(f"      ✅ IE: {len(gdf_ie)} puntos")
     
     # 4️⃣ VÍAS (3 TIPOS)
     vias_tipos = [
@@ -414,6 +384,7 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     ]
     
     for via_tipo, patrones in vias_tipos:
+        print(f"   🔍 Buscando Vía {via_tipo.capitalize()}...")
         ruta_via = buscar_shapefile_inteligente(
             RUTA_BASE_VIAS,
             patrones,
@@ -423,6 +394,7 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
             gdf_via = cargar_y_preparar_shapefile(ruta_via, f"Vía {via_tipo}")
             if gdf_via is not None:
                 elementos_cargados[f'via_{via_tipo}'] = gdf_via
+                print(f"      ✅ Vía {via_tipo}: {len(gdf_via)} segmentos")
     
     if not elementos_cargados:
         print("❌ No se cargó ningún elemento expuesto")
@@ -430,9 +402,9 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     
     print(f"\n   ✅ Elementos cargados: {len(elementos_cargados)}")
 
-    # ═══════════════════════════════════════════════════════════════════
-    # PASO 3: RECORTAR ELEMENTOS AL DISTRITO
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # PASO 5: RECORTAR ELEMENTOS AL DISTRITO
+    # ══════════════════════════════════════════════════════════════════════════
     print("\n✂️ Recortando elementos al distrito...")
     
     elementos_procesados = {}
@@ -455,9 +427,9 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
         print("❌ Ningún elemento tiene datos en el distrito")
         return None
 
-    # ═══════════════════════════════════════════════════════════════════
-    # PASO 4: GENERAR LAYOUT DEL MAPA
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # PASO 6: GENERAR LAYOUT DEL MAPA
+    # ══════════════════════════════════════════════════════════════════════════
     print("\n🎨 Generando layout del mapa...")
     
     fig = plt.figure(figsize=(14, 9.9))
@@ -475,7 +447,7 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     # MAPA PRINCIPAL
     ax_main = fig.add_subplot(gs_izquierda[1])
 
-    # CÁLCULO DE BBOX CON ASPECT RATIO
+    # CÁLCULO DE BBOX
     minx, miny, maxx, maxy = gdf_distrito.total_bounds
     buffer_factor = 0.15
     buffer_x = (maxx - minx) * buffer_factor
@@ -506,9 +478,9 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
         print(f"   ⚠️  No se pudo cargar mapa base: {e}")
         ax_main.set_facecolor("#e8e8e8")
 
-    # ═══════════════════════════════════════════════════════════════════
-    # PASO 5: VISUALIZAR ELEMENTOS CON ORDEN CORRECTO
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # PASO 7: VISUALIZAR ELEMENTOS
+    # ══════════════════════════════════════════════════════════════════════════
     print("   🎨 Renderizando elementos...")
     
     orden_visualizacion = [
@@ -532,14 +504,13 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
                             edgecolor='white', markersize=50, marker='o', 
                             linewidth=1.0, alpha=0.95, zorder=10)
                 
-                # Etiquetas
                 col_nombre = encontrar_columna_nombre(gdf_elem, 
                     ['NOMB_CCPP', 'NOMBRE', 'NOMBCCPP', 'CCPP', 'NAME'])
                 
                 if col_nombre:
                     for idx, row in gdf_elem.iterrows():
                         x, y = row.geometry.x, row.geometry.y
-                        nombre = str(row[col_nombre])[:20]  # Limitar longitud
+                        nombre = str(row[col_nombre])[:20]
                         ax_main.annotate(nombre, xy=(x, y), xytext=(5, 5),
                                        textcoords='offset points', fontsize=6, 
                                        color=COLORES_ELEMENTOS[elemento_tipo], weight='bold',
@@ -551,7 +522,6 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
                             edgecolor='white', markersize=40, marker='s', 
                             linewidth=0.8, alpha=0.9, zorder=9)
                 
-                # Etiquetas
                 col_nombre = encontrar_columna_nombre(gdf_elem, 
                     ['NOMBRE', 'NOMB', 'NAME', 'COD_LOCAL'])
                 
@@ -596,9 +566,9 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     ax_main.add_artist(ScaleBar(1, units="m", location="lower left", 
                                 box_alpha=0.6, border_pad=0.5, scale_loc='bottom'))
 
-    # ═══════════════════════════════════════════════════════════════════
-    # PASO 6: MEMBRETE Y LEYENDA
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # PASO 8: MEMBRETE Y LEYENDA
+    # ══════════════════════════════════════════════════════════════════════════
     gs_memb_ley = gs_izquierda[2].subgridspec(1, 2, wspace=0.1)
     
     # MEMBRETE
@@ -699,9 +669,9 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
         spine.set_linewidth(2)
         spine.set_color('black')
 
-    # ═══════════════════════════════════════════════════════════════════
-    # PASO 7: GUARDAR MAPA
-    # ═══════════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
+    # PASO 9: GUARDAR MAPA
+    # ══════════════════════════════════════════════════════════════════════════
     print("\n💾 Guardando mapa...")
     
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -738,80 +708,36 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
         return None
 
 
-# ═══════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 # 🧪 FUNCIÓN DE PRUEBA
-# ═══════════════════════════════════════════════════════════════════════
+# ══════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     print("\n" + "="*80)
     print("🧪 PRUEBA DE GENERACIÓN DE MAPA DE ELEMENTOS EXPUESTOS")
     print("="*80)
     
-    # Cargar límites administrativos de prueba
-    try:
-        # Ajusta estas rutas según tu estructura
-        ruta_distritos = f"{ruta_base}/DATA/LIMITES/DISTRITOS/DISTRITOS.shp"
-        ruta_provincias = f"{ruta_base}/DATA/LIMITES/PROVINCIAS/PROVINCIAS.shp"
-        ruta_departamentos = f"{ruta_base}/DATA/LIMITES/DEPARTAMENTOS/DEPARTAMENTOS.shp"
-        
-        print("\n📦 Cargando límites administrativos...")
-        gdf_distritos_full = gpd.read_file(ruta_distritos).to_crs(epsg=3857)
-        gdf_provincias_full = gpd.read_file(ruta_provincias).to_crs(epsg=3857)
-        gdf_departamentos_full = gpd.read_file(ruta_departamentos).to_crs(epsg=3857)
-        
-        print(f"   ✅ Distritos: {len(gdf_distritos_full)}")
-        print(f"   ✅ Provincias: {len(gdf_provincias_full)}")
-        print(f"   ✅ Departamentos: {len(gdf_departamentos_full)}")
-        
-        # Parámetros de prueba (AJUSTA SEGÚN TUS DATOS)
-        departamento_prueba = "CUSCO"
-        provincia_prueba = "ANTA"
-        distrito_prueba = "ANTA"
-        usuario_prueba = "test_user"
-        
-        print(f"\n🎯 Parámetros de prueba:")
-        print(f"   Departamento: {departamento_prueba}")
-        print(f"   Provincia: {provincia_prueba}")
-        print(f"   Distrito: {distrito_prueba}")
-        
-        # Detectar columnas
-        col_dist = encontrar_columna_nombre(gdf_distritos_full, 
-            ['NOMBDIST', 'NOMBRE', 'DISTRITO', 'NAME'])
-        col_prov = encontrar_columna_nombre(gdf_provincias_full, 
-            ['NOMBPROV', 'NOMBRE', 'PROVINCIA', 'NAME'])
-        col_depa = encontrar_columna_nombre(gdf_departamentos_full, 
-            ['NOMBDEP', 'NOMBRE', 'DEPARTAMENTO', 'NAME'])
-        
-        print(f"\n   Columnas detectadas:")
-        print(f"   • Distrito: {col_dist}")
-        print(f"   • Provincia: {col_prov}")
-        print(f"   • Departamento: {col_depa}")
-        
-        # Filtrar distrito
-        gdf_distrito = filtrar_geodataframe_por_nombre(
-            gdf_distritos_full, col_dist, distrito_prueba, "Distrito"
-        )
-        
-        print(f"\n   ✅ Distrito filtrado: {len(gdf_distrito)} geometría(s)")
-        
-        # Generar mapa
-        ruta_mapa = generar_mapa_elementos_expuestos(
-            usuario_prueba,
-            departamento_prueba,
-            provincia_prueba,
-            distrito_prueba,
-            gdf_distrito,
-            gdf_departamentos_full,
-            gdf_provincias_full
-        )
-        
-        if ruta_mapa:
-            print(f"\n✅ PRUEBA EXITOSA")
-            print(f"   Mapa guardado en: {ruta_mapa}")
-        else:
-            print(f"\n❌ PRUEBA FALLIDA")
+    # Parámetros de prueba (AJUSTA SEGÚN TUS DATOS)
+    departamento_prueba = "CUSCO"
+    provincia_prueba = "ANTA"
+    distrito_prueba = "ANTA"
+    usuario_prueba = "test_user"
     
-    except Exception as e:
-        print(f"\n❌ Error en prueba: {e}")
-        import traceback
-        traceback.print_exc()
+    print(f"\n🎯 Parámetros de prueba:")
+    print(f"   Departamento: {departamento_prueba}")
+    print(f"   Provincia: {provincia_prueba}")
+    print(f"   Distrito: {distrito_prueba}")
+    
+    # Generar mapa (la función carga los límites administrativos internamente)
+    ruta_mapa = generar_mapa_elementos_expuestos(
+        usuario_prueba,
+        departamento_prueba,
+        provincia_prueba,
+        distrito_prueba
+    )
+    
+    if ruta_mapa:
+        print(f"\n✅ PRUEBA EXITOSA")
+        print(f"   Mapa guardado en: {ruta_mapa}")
+    else:
+        print(f"\n❌ PRUEBA FALLIDA")

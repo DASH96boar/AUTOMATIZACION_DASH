@@ -1,4 +1,4 @@
-# Archivo: app_peligro.py - DASHBOARD PROFESIONAL PARA MAPA DE PELIGRO
+# Archivo: app_peligro.py - DASHBOARD CON PELIGROS Y ELEMENTOS EXPUESTOS - CORREGIDO
 
 from dash import Dash, html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
@@ -7,10 +7,11 @@ import os
 import time
 import threading
 import uuid
-import json
+import geopandas as gpd
 
-# Importar la función del mapa de peligro
+# Importar funciones de generación
 from mapa_peligro import generar_mapa_peligro
+from elementos_expuestos import generar_mapa_elementos_expuestos
 
 # Diccionario global para rastrear procesos en segundo plano
 PROCESS_STATUS = {}
@@ -26,7 +27,7 @@ app = Dash(
     suppress_callback_exceptions=True
 )
 
-# Inyectar CSS profesional moderno
+# CSS COMPLETO
 app.index_string = '''
 <!DOCTYPE html>
 <html>
@@ -36,7 +37,6 @@ app.index_string = '''
         {%favicon%}
         {%css%}
         <style>
-            /* VARIABLES PROFESIONALES */
             :root {
                 --primary: #1a1a2e;
                 --secondary: #16213e;
@@ -44,6 +44,8 @@ app.index_string = '''
                 --accent-light: #ff6b5b;
                 --accent-dark: #c0392b;
                 --success: #27ae60;
+                --warning: #f39c12;
+                --info: #3498db;
                 --text-primary: #ecf0f1;
                 --text-secondary: #bdc3c7;
                 --border: #34495e;
@@ -54,7 +56,6 @@ app.index_string = '''
                 font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             }
             
-            /* FONDO BASE */
             body {
                 background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
                 min-height: 100vh;
@@ -66,7 +67,6 @@ app.index_string = '''
                 height: 100%;
             }
             
-            /* NAVBAR PREMIUM */
             .navbar {
                 background: rgba(26, 26, 46, 0.95) !important;
                 backdrop-filter: blur(10px);
@@ -95,7 +95,6 @@ app.index_string = '''
                 transform: scale(1.05);
             }
             
-            /* CARDS PREMIUM */
             .card {
                 background: rgba(22, 33, 62, 0.8) !important;
                 border: 1px solid var(--border) !important;
@@ -115,7 +114,6 @@ app.index_string = '''
                 padding: 2rem !important;
             }
             
-            /* INPUTS PROFESIONALES */
             .form-control, .form-select {
                 background: rgba(15, 52, 96, 0.6) !important;
                 border: 1.5px solid var(--border) !important;
@@ -138,7 +136,6 @@ app.index_string = '''
                 opacity: 0.7;
             }
             
-            /* LABELS */
             label {
                 color: var(--accent);
                 font-weight: 700;
@@ -156,7 +153,6 @@ app.index_string = '''
                 opacity: 0.9;
             }
             
-            /* BOTONES PREMIUM */
             .btn {
                 border-radius: 12px !important;
                 padding: 12px 24px !important;
@@ -211,7 +207,98 @@ app.index_string = '''
                 transform: scale(1.05);
             }
             
-            /* ALERTAS PROFESIONALES */
+            /* BOTONES DE TIPO (PELIGRO Y ELEMENTOS EXPUESTOS) */
+            .tipo-selector {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+                gap: 12px;
+                margin-bottom: 0px;
+            }
+            
+            .btn-tipo {
+                padding: 18px 14px !important;
+                border-radius: 14px !important;
+                font-weight: 700 !important;
+                font-size: 0.8rem !important;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+                border: 2px solid var(--border) !important;
+                background: rgba(15, 52, 96, 0.4) !important;
+                color: var(--text-secondary) !important;
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                gap: 10px;
+                cursor: pointer;
+                position: relative;
+            }
+            
+            .btn-tipo i {
+                font-size: 2rem;
+                transition: all 0.3s ease;
+            }
+            
+            .btn-tipo-active {
+                background: linear-gradient(135deg, #27ae60 0%, #229954 100%) !important;
+                border-color: #27ae60 !important;
+                color: white !important;
+                box-shadow: 0 8px 25px rgba(39, 174, 96, 0.5) !important;
+                transform: translateY(-3px) scale(1.02);
+                cursor: default !important;
+                pointer-events: none !important;
+            }
+            
+            .btn-tipo-active i {
+                transform: scale(1.1);
+            }
+            
+            .btn-tipo-active::after {
+                content: '✓';
+                position: absolute;
+                top: 8px;
+                right: 8px;
+                background: rgba(255, 255, 255, 0.3);
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-weight: 900;
+                font-size: 0.9rem;
+            }
+            
+            .btn-tipo:not(.btn-tipo-active):not(:disabled):hover {
+                border-color: #27ae60;
+                background: rgba(39, 174, 96, 0.2) !important;
+                transform: translateY(-2px);
+            }
+            
+            .btn-tipo:not(.btn-tipo-active):not(:disabled):active {
+                transform: translateY(0px) scale(0.98);
+            }
+            
+            .btn-tipo:disabled {
+                opacity: 0.35;
+                cursor: not-allowed !important;
+                background: rgba(15, 52, 96, 0.2) !important;
+            }
+            
+            .btn-tipo:disabled i {
+                opacity: 0.4;
+            }
+            
+            .badge-soon {
+                font-size: 0.65rem;
+                padding: 3px 8px;
+                background: rgba(241, 196, 15, 0.2);
+                color: #f1c40f;
+                border-radius: 6px;
+                font-weight: 600;
+                margin-top: -5px;
+            }
+            
             .alert {
                 border-radius: 14px !important;
                 border: none !important;
@@ -244,20 +331,24 @@ app.index_string = '''
                 color: var(--text-primary) !important;
             }
             
+            .alert-info {
+                background: linear-gradient(135deg, rgba(52, 152, 219, 0.15) 0%, rgba(41, 128, 185, 0.1) 100%) !important;
+                border-left: 5px solid var(--info) !important;
+                color: var(--text-primary) !important;
+            }
+            
             .alert-heading {
                 font-weight: 800 !important;
                 font-size: 1.1rem !important;
                 letter-spacing: -0.3px !important;
             }
             
-            /* SEPARADORES */
             hr {
                 border-top: 1px solid var(--border) !important;
                 opacity: 1;
                 margin: 1.5rem 0 !important;
             }
             
-            /* SECCIONES */
             .section-title {
                 color: var(--text-primary);
                 font-weight: 800;
@@ -274,7 +365,6 @@ app.index_string = '''
                 font-size: 1.4rem;
             }
             
-            /* RESUMEN DE SELECCIÓN */
             .selection-summary {
                 background: rgba(15, 52, 96, 0.6);
                 padding: 20px;
@@ -302,7 +392,6 @@ app.index_string = '''
                 font-weight: 700;
             }
             
-            /* LOGIN CONTAINER */
             .login-container {
                 background: rgba(22, 33, 62, 0.95);
                 backdrop-filter: blur(20px);
@@ -326,7 +415,6 @@ app.index_string = '''
                 margin-bottom: 2rem;
             }
             
-            /* ANIMACIONES */
             @keyframes fadeIn {
                 from {
                     opacity: 0;
@@ -381,7 +469,6 @@ app.index_string = '''
                 animation: spin 2s linear infinite;
             }
             
-            /* SCROLLBAR */
             ::-webkit-scrollbar {
                 width: 10px;
             }
@@ -399,7 +486,6 @@ app.index_string = '''
                 background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
             }
             
-            /* LAYOUT RESPONSIVE */
             .main-container {
                 padding: 2rem;
                 min-height: 100vh;
@@ -413,7 +499,6 @@ app.index_string = '''
                 animation: slideInRight 0.7s ease-out;
             }
             
-            /* FOOTER CONTACTO */
             .contact-footer {
                 position: fixed;
                 bottom: 25px;
@@ -452,13 +537,11 @@ app.index_string = '''
                 color: var(--accent);
             }
             
-            /* ICONOS DE ÉXITO */
             .success-icon {
                 color: var(--success);
                 font-size: 3rem;
             }
             
-            /* DESCARGA SECTION */
             .download-section {
                 background: rgba(39, 174, 96, 0.1);
                 padding: 20px;
@@ -467,99 +550,6 @@ app.index_string = '''
                 margin-top: 15px;
             }
             
-            /* BOTONES DE TIPO DE PELIGRO */
-            .peligro-selector {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                gap: 12px;
-                margin-bottom: 0px;
-            }
-            
-            .btn-peligro {
-                padding: 18px 14px !important;
-                border-radius: 14px !important;
-                font-weight: 700 !important;
-                font-size: 0.8rem !important;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                border: 2px solid var(--border) !important;
-                background: rgba(15, 52, 96, 0.4) !important;
-                color: var(--text-secondary) !important;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 10px;
-                cursor: pointer;
-                position: relative;
-            }
-            
-            .btn-peligro i {
-                font-size: 2rem;
-                transition: all 0.3s ease;
-            }
-            
-            .btn-peligro-active {
-                background: linear-gradient(135deg, #27ae60 0%, #229954 100%) !important;
-                border-color: #27ae60 !important;
-                color: white !important;
-                box-shadow: 0 8px 25px rgba(39, 174, 96, 0.5) !important;
-                transform: translateY(-3px) scale(1.02);
-                cursor: default !important;
-                pointer-events: none !important;
-            }
-            
-            .btn-peligro-active i {
-                transform: scale(1.1);
-            }
-            
-            .btn-peligro-active::after {
-                content: '✓';
-                position: absolute;
-                top: 8px;
-                right: 8px;
-                background: rgba(255, 255, 255, 0.3);
-                width: 24px;
-                height: 24px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: 900;
-                font-size: 0.9rem;
-            }
-            
-            .btn-peligro:not(.btn-peligro-active):not(:disabled):hover {
-                border-color: #27ae60;
-                background: rgba(39, 174, 96, 0.2) !important;
-                transform: translateY(-2px);
-            }
-            
-            .btn-peligro:not(.btn-peligro-active):not(:disabled):active {
-                transform: translateY(0px) scale(0.98);
-            }
-            
-            .btn-peligro:disabled {
-                opacity: 0.35;
-                cursor: not-allowed !important;
-                background: rgba(15, 52, 96, 0.2) !important;
-            }
-            
-            .btn-peligro:disabled i {
-                opacity: 0.4;
-            }
-            
-            .badge-soon {
-                font-size: 0.65rem;
-                padding: 3px 8px;
-                background: rgba(241, 196, 15, 0.2);
-                color: #f1c40f;
-                border-radius: 6px;
-                font-weight: 600;
-                margin-top: -5px;
-            }
-            
-            /* RESPONSIVE */
             @media (max-width: 768px) {
                 .main-container {
                     padding: 1rem;
@@ -584,7 +574,7 @@ app.index_string = '''
                     right: 25px;
                 }
                 
-                .peligro-selector {
+                .tipo-selector {
                     grid-template-columns: 1fr;
                 }
             }
@@ -613,6 +603,7 @@ def leer_sql(ruta):
     matches = re.findall(patron, contenido)
     return [[v.strip().strip("'") for v in match.split(',')] for match in matches]
 
+# ==================== CARGA DE DATOS ====================
 # Carga de datos SQL
 try:
     ruta_departamentos = '/workspaces/AUTOMATIZACION_DASH/PRUEBA/DASHBOARDS/departamentos.sql'
@@ -636,6 +627,92 @@ try:
 except Exception as e:
     print(f"❌ Error crítico al cargar datos SQL: {e}. Usando datos de respaldo.")
     LISTA_DEPARTAMENTOS, PROVINCIAS_POR_DEPA, DISTRITOS_POR_PROV = ['LIMA'], {'LIMA': ['LIMA']}, {'LIMA': ['MIRAFLORES']}
+
+# ==================== CARGAR GEODATAFRAMES GLOBALMENTE (CORREGIDO) ====================
+print("\n📦 Cargando GeoDataFrames de límites administrativos...")
+
+ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
+
+# Intentar múltiples ubicaciones posibles para los shapefiles
+rutas_posibles = {
+    'distritos': [
+        f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS DEL PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
+    ],
+    'provincias': [
+        f"{ruta_base}/DATA/MAPA DE UBICACION/PROVINCIAS DEL PERU/PROVINCIAS_inei_geogpsperu_suyopomalia.shp"
+    ],
+    'departamentos': [
+        f"{ruta_base}/DATA/MAPA DE UBICACION/DEPARTAMENTOS DEL PERU/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp"
+    ]
+}
+
+def encontrar_shapefile(lista_rutas, nombre_tipo):
+    """Busca el primer shapefile que exista en la lista de rutas"""
+    for ruta in lista_rutas:
+        if os.path.exists(ruta):
+            print(f"   ✅ {nombre_tipo} encontrado: {ruta}")
+            return ruta
+    print(f"   ⚠️  {nombre_tipo} no encontrado en ninguna ubicación")
+    return None
+
+try:
+    # Buscar shapefiles
+    ruta_shp_distritos = encontrar_shapefile(rutas_posibles['distritos'], 'DISTRITOS')
+    ruta_shp_provincias = encontrar_shapefile(rutas_posibles['provincias'], 'PROVINCIAS')
+    ruta_shp_departamentos = encontrar_shapefile(rutas_posibles['departamentos'], 'DEPARTAMENTOS')
+    
+    # Cargar GeoDataFrames
+    if ruta_shp_distritos:
+        gdf_distritos = gpd.read_file(ruta_shp_distritos)
+        if gdf_distritos.crs is None:
+            gdf_distritos.set_crs(epsg=4326, inplace=True)
+        if gdf_distritos.crs.to_epsg() != 3857:
+            gdf_distritos = gdf_distritos.to_crs(epsg=3857)
+        print(f"   ✅ Distritos cargados: {len(gdf_distritos)} registros")
+    else:
+        gdf_distritos = None
+        print("   ❌ No se pudo cargar GeoDataFrame de distritos")
+    
+    if ruta_shp_provincias:
+        gdf_provincias = gpd.read_file(ruta_shp_provincias)
+        if gdf_provincias.crs is None:
+            gdf_provincias.set_crs(epsg=4326, inplace=True)
+        if gdf_provincias.crs.to_epsg() != 3857:
+            gdf_provincias = gdf_provincias.to_crs(epsg=3857)
+        print(f"   ✅ Provincias cargadas: {len(gdf_provincias)} registros")
+    else:
+        gdf_provincias = None
+        print("   ❌ No se pudo cargar GeoDataFrame de provincias")
+    
+    if ruta_shp_departamentos:
+        gdf_departamentos = gpd.read_file(ruta_shp_departamentos)
+        if gdf_departamentos.crs is None:
+            gdf_departamentos.set_crs(epsg=4326, inplace=True)
+        if gdf_departamentos.crs.to_epsg() != 3857:
+            gdf_departamentos = gdf_departamentos.to_crs(epsg=3857)
+        print(f"   ✅ Departamentos cargados: {len(gdf_departamentos)} registros")
+    else:
+        gdf_departamentos = None
+        print("   ❌ No se pudo cargar GeoDataFrame de departamentos")
+    
+    # ✅ CORRECCIÓN CRÍTICA: Usar "is None" en lugar de evaluar el GeoDataFrame directamente
+    if gdf_distritos is None or gdf_provincias is None or gdf_departamentos is None:
+        print("\n⚠️  ADVERTENCIA: Algunos GeoDataFrames no se pudieron cargar")
+        print("   Los mapas de elementos expuestos pueden fallar")
+        print("   Verifica que los shapefiles existan en alguna de estas ubicaciones:")
+        for tipo, rutas in rutas_posibles.items():
+            print(f"\n   {tipo.upper()}:")
+            for ruta in rutas:
+                print(f"      • {ruta}")
+    
+except Exception as e:
+    print(f"\n❌ Error cargando GeoDataFrames: {e}")
+    print("   La aplicación funcionará, pero los mapas de elementos expuestos fallarán")
+    gdf_distritos = None
+    gdf_provincias = None
+    gdf_departamentos = None
+    import traceback
+    traceback.print_exc()
 
 # ==================== LAYOUT DE LOGIN ====================
 login_layout = dbc.Container([
@@ -663,7 +740,7 @@ login_layout = dbc.Container([
                 dbc.Card([
                     dbc.CardBody([
                         html.H1("Comprensión del riesgo", className="login-title text-center"),
-                        html.P("Análisis de Peligros", className="login-subtitle text-center"),
+                        html.P("Análisis de Peligros y Elementos Expuestos", className="login-subtitle text-center"),
                         
                         html.Hr(style={'opacity': '0.3', 'margin': '2rem 0'}),
                         
@@ -719,11 +796,12 @@ dashboard_layout = dbc.Container([
     dcc.Download(id="download-map-image"),
     dcc.Store(id='map-filepath-store', storage_type='memory'),
     dcc.Store(id='loading-state', storage_type='memory', data=False),
-    dcc.Store(id='selected-peligro', storage_type='memory', data='inundacion'),
-    dcc.Store(id='peligro-locked', storage_type='memory', data=False),
+    dcc.Store(id='selected-tipo-peligro', storage_type='memory', data=None),
+    dcc.Store(id='selected-elementos-expuestos', storage_type='memory', data=False),
+    dcc.Store(id='tipo-locked', storage_type='memory', data=False),
     dcc.Store(id='process-id', storage_type='memory'),
     dcc.Store(id='generation-status', storage_type='memory', data={'status': 'idle'}),
-    dcc.Interval(id='check-process', interval=2000, disabled=True),  # Verifica cada 2 segundos
+    dcc.Interval(id='check-process', interval=2000, disabled=True),
     
     html.Div([
         html.A([
@@ -782,29 +860,50 @@ dashboard_layout = dbc.Container([
                     
                     html.Hr(),
                     
+                    # SECCIÓN: TIPOS DE PELIGRO
                     html.Div([
                         html.Label([
                             html.I(className="bi bi-exclamation-triangle"),
-                            "Tipo de Peligro"
+                            "Tipos de Peligro"
                         ], style={'marginBottom': '15px'}),
-                        html.Div(className='peligro-selector', children=[
+                        html.Div(className='tipo-selector', children=[
                             dbc.Button([
                                 html.I(className="bi bi-droplet-fill"),
                                 "Inundación"
-                            ], id='btn-inundacion', className='btn-peligro btn-peligro-active', n_clicks=0),
+                            ], id='btn-inundacion', className='btn-tipo', n_clicks=0),
                             
                             dbc.Button([
                                 html.I(className="bi bi-arrow-down-right-circle-fill"),
                                 "Deslizamiento",
                                 html.Span("PRÓXIMAMENTE", className="badge-soon")
-                            ], id='btn-deslizamiento', className='btn-peligro', disabled=True, n_clicks=0),
+                            ], id='btn-deslizamiento', className='btn-tipo', disabled=True, n_clicks=0),
                             
                             dbc.Button([
                                 html.I(className="bi bi-snow2"),
                                 "Heladas",
                                 html.Span("PRÓXIMAMENTE", className="badge-soon")
-                            ], id='btn-heladas', className='btn-peligro', disabled=True, n_clicks=0)
+                            ], id='btn-heladas', className='btn-tipo', disabled=True, n_clicks=0)
                         ])
+                    ], className='mb-4'),
+                    
+                    html.Hr(),
+                    
+                    # SECCIÓN: ELEMENTOS EXPUESTOS (INDEPENDIENTE)
+                    html.Div([
+                        html.Label([
+                            html.I(className="bi bi-layers"),
+                            "Elementos Expuestos"
+                        ], style={'marginBottom': '8px'}),
+                        html.P([
+                            html.I(className="bi bi-info-circle me-2", style={'fontSize': '0.9rem'}),
+                            "Mapa de infraestructura y zonas vulnerables"
+                        ], style={'fontSize': '0.85rem', 'color': 'var(--text-secondary)', 'marginBottom': '12px'}),
+                        
+                        dbc.Button([
+                            html.I(className="bi bi-pin-map"),
+                            "Generar Mapa de Elementos Expuestos"
+                        ], id='btn-elementos-expuestos', className='btn-tipo', n_clicks=0, 
+                        style={'width': '100%', 'fontSize': '0.85rem', 'padding': '16px 14px !important'})
                     ], className='mb-4'),
                     
                     html.Hr(),
@@ -861,8 +960,12 @@ dashboard_layout = dbc.Container([
                                 html.Div([
                                     html.I(className="bi bi-map spin", style={'fontSize': '3rem', 'color': 'var(--accent)', 'marginBottom': '15px'})
                                 ], className='text-center'),
-                                html.H5("Generador de Mapas de Susceptibilidad", className="alert-heading text-center"),
-                                html.P("Configure los parámetros en el panel izquierdo y genere su mapa de análisis", className='text-center mb-0', style={'fontSize': '0.95rem', 'color': 'var(--text-secondary)'})
+                                html.H5("Sistema de Análisis de Riesgo", className="alert-heading text-center"),
+                                html.P("Configure los parámetros y seleccione el tipo de análisis:", className='text-center mb-3', style={'fontSize': '0.95rem', 'color': 'var(--text-secondary)'}),
+                                html.Ul([
+                                    html.Li([html.Strong("Peligros:"), " Inundación, Deslizamiento, Heladas"]),
+                                    html.Li([html.Strong("Elementos Expuestos:"), " Agrícola, CP, IE, Vías"])
+                                ], style={'textAlign': 'left', 'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
                             ], color="light", className='border-0 mb-4')
                         ],
                         className="result-panel"
@@ -909,11 +1012,6 @@ dashboard_layout = dbc.Container([
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
     dcc.Store(id='session-store', storage_type='session'),
-    dcc.Store(id='loading-state', storage_type='memory', data=False),
-    dcc.Store(id='selected-peligro', storage_type='memory', data='inundacion'),
-    dcc.Store(id='peligro-locked', storage_type='memory', data=False),
-    dcc.Store(id='process-id', storage_type='memory'),
-    dcc.Store(id='generation-status', storage_type='memory', data={'status': 'idle'}),
     html.Div(id='page-content')
 ])
 
@@ -958,107 +1056,59 @@ def display_user_nav(session_data):
         session_data.get('username', 'Usuario')
     ] if session_data and session_data.get('logged_in') else None
 
-# Callback para manejar la selección de tipo de peligro (SOLO SELECCIÓN, NO EJECUCIÓN)
+# Callback para manejar TODOS los tipos de análisis
 @app.callback(
     [Output('btn-inundacion', 'className'),
      Output('btn-deslizamiento', 'className'),
      Output('btn-heladas', 'className'),
-     Output('selected-peligro', 'data'),
-     Output('peligro-locked', 'data')],
+     Output('btn-elementos-expuestos', 'className'),
+     Output('selected-tipo-peligro', 'data'),
+     Output('selected-elementos-expuestos', 'data'),
+     Output('tipo-locked', 'data')],
     [Input('btn-inundacion', 'n_clicks'),
      Input('btn-deslizamiento', 'n_clicks'),
-     Input('btn-heladas', 'n_clicks')],
-    [State('peligro-locked', 'data')],
+     Input('btn-heladas', 'n_clicks'),
+     Input('btn-elementos-expuestos', 'n_clicks')],
+    [State('tipo-locked', 'data')],
     prevent_initial_call=False
 )
-def update_peligro_selection(inundacion_clicks, deslizamiento_clicks, heladas_clicks, is_locked):
-    """
-    Maneja la selección visual del tipo de peligro.
-    IMPORTANTE: 
-    - Solo actualiza la selección, NO ejecuta ningún código.
-    - Una vez seleccionado, SE BLOQUEA y no se puede cambiar.
-    - La ejecución ocurre al presionar "Generar Mapa".
-    """
+def update_tipo_selection(inundacion_clicks, deslizamiento_clicks, heladas_clicks, 
+                          elementos_clicks, is_locked):
     from dash import callback_context
     
-    # Si ya está bloqueado, mantener el estado actual sin cambios
     if is_locked:
-        # Determinar cuál está activo basado en el estado bloqueado
         if inundacion_clicks and inundacion_clicks > 0:
-            return (
-                'btn-peligro btn-peligro-active',
-                'btn-peligro',
-                'btn-peligro',
-                'inundacion',
-                True
-            )
+            return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo', 
+                    'inundacion', False, True)
         elif deslizamiento_clicks and deslizamiento_clicks > 0:
-            return (
-                'btn-peligro',
-                'btn-peligro btn-peligro-active',
-                'btn-peligro',
-                'deslizamiento',
-                True
-            )
+            return ('btn-tipo', 'btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo',
+                    'deslizamiento', False, True)
         elif heladas_clicks and heladas_clicks > 0:
-            return (
-                'btn-peligro',
-                'btn-peligro',
-                'btn-peligro btn-peligro-active',
-                'heladas',
-                True
-            )
+            return ('btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active', 'btn-tipo',
+                    'heladas', False, True)
+        elif elementos_clicks and elementos_clicks > 0:
+            return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
+                    None, True, True)
     
-    # Valores por defecto al inicio (antes del primer clic)
     if not callback_context.triggered:
-        return (
-            'btn-peligro',  # Ninguno activo al inicio
-            'btn-peligro',
-            'btn-peligro',
-            None,
-            False
-        )
+        return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', None, False, False)
     
-    # Detectar qué botón fue presionado
     button_id = callback_context.triggered[0]['prop_id'].split('.')[0]
     
-    # Actualizar clases según el botón presionado Y BLOQUEAR
     if button_id == 'btn-inundacion':
-        print("✅ Tipo de peligro SELECCIONADO y BLOQUEADO: INUNDACIÓN")
-        return (
-            'btn-peligro btn-peligro-active',
-            'btn-peligro',
-            'btn-peligro',
-            'inundacion',
-            True  # BLOQUEAR después del primer clic
-        )
+        return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
+                'inundacion', False, True)
     elif button_id == 'btn-deslizamiento':
-        print("✅ Tipo de peligro SELECCIONADO y BLOQUEADO: DESLIZAMIENTO")
-        return (
-            'btn-peligro',
-            'btn-peligro btn-peligro-active',
-            'btn-peligro',
-            'deslizamiento',
-            True  # BLOQUEAR después del primer clic
-        )
+        return ('btn-tipo', 'btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo',
+                'deslizamiento', False, True)
     elif button_id == 'btn-heladas':
-        print("✅ Tipo de peligro SELECCIONADO y BLOQUEADO: HELADAS")
-        return (
-            'btn-peligro',
-            'btn-peligro',
-            'btn-peligro btn-peligro-active',
-            'heladas',
-            True  # BLOQUEAR después del primer clic
-        )
+        return ('btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active', 'btn-tipo',
+                'heladas', False, True)
+    elif button_id == 'btn-elementos-expuestos':
+        return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
+                None, True, True)
     
-    # Por defecto, mantener sin selección
-    return (
-        'btn-peligro',
-        'btn-peligro',
-        'btn-peligro',
-        None,
-        False
-    )
+    return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', None, False, False)
 
 @app.callback(
     Output('provincia-dropdown', 'options'), 
@@ -1082,30 +1132,39 @@ def update_distritos(provincia):
         return [{'label': dist, 'value': dist} for dist in sorted(DISTRITOS_POR_PROV.get(provincia, []))], False, None
     return [], True, None
 
-
 @app.callback(
     Output('generate-map-button', 'disabled', allow_duplicate=True), 
     Output('download-button', 'disabled', allow_duplicate=True),
-    [Input(c, 'value') for c in ['user-name-input', 'departamento-dropdown', 'provincia-dropdown', 'distrito-dropdown']],
+    [Input('user-name-input', 'value'),
+     Input('departamento-dropdown', 'value'),
+     Input('provincia-dropdown', 'value'),
+     Input('distrito-dropdown', 'value'),
+     Input('selected-tipo-peligro', 'data'),
+     Input('selected-elementos-expuestos', 'data')],
     Input('loading-state', 'data'),
     prevent_initial_call=True
 )
-def enable_buttons(*values): 
-    loading_state = values[-1]
-    form_values = values[:-1]
-    
+def enable_buttons(user_name, departamento, provincia, distrito, tipo_peligro, 
+                   elementos_expuestos, loading_state):
     if loading_state:
         return True, True
     
-    all_filled = all(form_values)
-    return not all_filled, not all_filled
+    form_complete = all([user_name, departamento, provincia, distrito])
+    tipo_selected = tipo_peligro is not None or elementos_expuestos is True
+    can_generate = form_complete and tipo_selected
+    
+    return not can_generate, not can_generate
 
 @app.callback(
     Output('selection-summary', 'children'), 
-    [Input(c, 'value') for c in ['user-name-input', 'departamento-dropdown', 'provincia-dropdown', 'distrito-dropdown']],
-    Input('selected-peligro', 'data')
+    [Input('user-name-input', 'value'),
+     Input('departamento-dropdown', 'value'),
+     Input('provincia-dropdown', 'value'),
+     Input('distrito-dropdown', 'value'),
+     Input('selected-tipo-peligro', 'data'),
+     Input('selected-elementos-expuestos', 'data')]
 )
-def update_summary(user_name, departamento, provincia, distrito, tipo_peligro):
+def update_summary(user_name, departamento, provincia, distrito, tipo_peligro, elementos_expuestos):
     if not any([user_name, departamento, provincia, distrito]): 
         return dbc.Alert([
             html.I(className="bi bi-info-circle me-2"),
@@ -1114,19 +1173,27 @@ def update_summary(user_name, departamento, provincia, distrito, tipo_peligro):
     
     summary_items = []
     
-    # Determinar tipo de peligro y su icono
-    peligro_map = {
-        'inundacion': ('Inundación', 'bi-droplet-fill'),
-        'deslizamiento': ('Deslizamiento', 'bi-arrow-down-right-circle-fill'),
-        'heladas': ('Heladas', 'bi-snow2')
-    }
-    
-    peligro_nombre, peligro_icon = peligro_map.get(tipo_peligro, ('Inundación', 'bi-droplet-fill'))
-    
-    summary_items.append(html.Div(className='summary-item', children=[
-        html.I(className=f"bi {peligro_icon}"),
-        html.Span([html.Strong("Peligro:"), f" {peligro_nombre}"])
-    ]))
+    if elementos_expuestos:
+        summary_items.append(html.Div(className='summary-item', children=[
+            html.I(className="bi bi-layers"),
+            html.Span([html.Strong("Análisis:"), " Elementos Expuestos"])
+        ]))
+        summary_items.append(html.Div(className='summary-item', children=[
+            html.I(className="bi bi-list-check"),
+            html.Span([html.Strong("Incluye:"), " Agrícola, CP, IE, Vías"])
+        ]))
+    elif tipo_peligro:
+        peligro_map = {
+            'inundacion': ('Inundación', 'bi-droplet-fill'),
+            'deslizamiento': ('Deslizamiento', 'bi-arrow-down-right-circle-fill'),
+            'heladas': ('Heladas', 'bi-snow2')
+        }
+        peligro_nombre, peligro_icon = peligro_map.get(tipo_peligro, ('Inundación', 'bi-droplet-fill'))
+        
+        summary_items.append(html.Div(className='summary-item', children=[
+            html.I(className=f"bi {peligro_icon}"),
+            html.Span([html.Strong("Peligro:"), f" {peligro_nombre}"])
+        ]))
     
     if user_name: 
         summary_items.append(html.Div(className='summary-item', children=[
@@ -1163,33 +1230,36 @@ def update_summary(user_name, departamento, provincia, distrito, tipo_peligro):
      State('departamento-dropdown', 'value'),
      State('provincia-dropdown', 'value'),
      State('distrito-dropdown', 'value'),
-     State('selected-peligro', 'data')],
+     State('selected-tipo-peligro', 'data'),
+     State('selected-elementos-expuestos', 'data')],
     prevent_initial_call=True
 )
-def start_map_generation(n_clicks, user_name, departamento, provincia, distrito, tipo_peligro):
-    """
-    Inicia la generación del mapa en segundo plano usando threading
-    """
-    # Generar ID único para este proceso
+def start_map_generation(n_clicks, user_name, departamento, provincia, distrito, 
+                        tipo_peligro, elementos_expuestos):
+    """Inicia la generación del mapa en segundo plano"""
     process_id = str(uuid.uuid4())
     
-    # Determinar nombre del peligro
-    peligro_nombre = {
-        'inundacion': 'Inundación',
-        'deslizamiento': 'Deslizamiento',
-        'heladas': 'Heladas'
-    }.get(tipo_peligro, 'Inundación')
+    if elementos_expuestos:
+        tipo_analisis = "ELEMENTOS EXPUESTOS"
+        map_type = "elementos"
+    else:
+        peligro_nombres = {
+            'inundacion': 'Inundación',
+            'deslizamiento': 'Deslizamiento',
+            'heladas': 'Heladas'
+        }
+        tipo_analisis = f"PELIGRO - {peligro_nombres.get(tipo_peligro, 'Inundación')}"
+        map_type = "peligro"
     
     print(f"\n{'='*60}")
     print(f"🚀 INICIANDO PROCESO EN SEGUNDO PLANO".center(60))
     print(f"{'='*60}")
     print(f"🆔 Process ID: {process_id}")
+    print(f"📊 Tipo de análisis: {tipo_analisis}")
     print(f"📍 Ubicación: {distrito}, {provincia}, {departamento}")
-    print(f"💧 Tipo de peligro: {peligro_nombre}")
     print(f"👤 Responsable: {user_name}")
     print(f"{'='*60}\n")
     
-    # Inicializar estado del proceso
     PROCESS_STATUS[process_id] = {
         'status': 'processing',
         'start_time': time.time(),
@@ -1198,14 +1268,36 @@ def start_map_generation(n_clicks, user_name, departamento, provincia, distrito,
         'user_name': user_name,
         'departamento': departamento,
         'provincia': provincia,
-        'distrito': distrito
+        'distrito': distrito,
+        'map_type': map_type,
+        'tipo_analisis': tipo_analisis
     }
     
-    # Función que se ejecutará en segundo plano
     def background_task():
         try:
-            print(f"🔄 [{process_id}] Ejecutando mapa_peligro.py...")
-            ruta_guardado = generar_mapa_peligro(user_name, departamento, provincia, distrito)
+            print(f"🔄 [{process_id}] Ejecutando generación de mapa...")
+            
+            if map_type == "elementos":
+                print(f"🏗️ [{process_id}] Generando MAPA DE ELEMENTOS EXPUESTOS...")
+                
+                # Verificar que los GeoDataFrames estén disponibles
+                if gdf_distritos is None or gdf_provincias is None or gdf_departamentos is None:
+                    raise Exception("GeoDataFrames de límites no disponibles. Verifica que los shapefiles existan.")
+                
+                print(f"📍 [{process_id}] La función cargará los límites internamente...")
+                
+                # Generar mapa - La función carga los shapefiles internamente
+                # Solo necesita: nombre_usuario, departamento, provincia, distrito
+                ruta_guardado = generar_mapa_elementos_expuestos(
+                    user_name, 
+                    departamento, 
+                    provincia, 
+                    distrito
+                )
+                
+            else:
+                print(f"⚠️ [{process_id}] Generando MAPA DE PELIGRO...")
+                ruta_guardado = generar_mapa_peligro(user_name, departamento, provincia, distrito)
             
             tiempo_transcurrido = time.time() - PROCESS_STATUS[process_id]['start_time']
             minutos = int(tiempo_transcurrido // 60)
@@ -1242,7 +1334,6 @@ def start_map_generation(n_clicks, user_name, departamento, provincia, distrito,
             import traceback
             traceback.print_exc()
     
-    # Iniciar thread en segundo plano
     thread = threading.Thread(target=background_task, daemon=True)
     thread.start()
     
@@ -1250,12 +1341,12 @@ def start_map_generation(n_clicks, user_name, departamento, provincia, distrito,
         True,
         [
             html.I(className="bi bi-hourglass-split spin me-2"),
-            'Generando mapa en segundo plano...'
+            f'Generando {tipo_analisis}...'
         ],
         True,
-        False,  # Habilitar el interval para verificar
+        False,
         process_id,
-        {'status': 'processing', 'process_id': process_id}
+        {'status': 'processing', 'process_id': process_id, 'tipo': tipo_analisis}
     )
 
 @app.callback(
@@ -1272,36 +1363,29 @@ def start_map_generation(n_clicks, user_name, departamento, provincia, distrito,
     prevent_initial_call=True
 )
 def check_process_status(n_intervals, process_id):
-    """
-    Verifica periódicamente el estado del proceso en segundo plano
-    """
+    """Verifica el estado del proceso en segundo plano"""
     if not process_id or process_id not in PROCESS_STATUS:
         return (
             dbc.Alert("Error: Proceso no encontrado", color="danger"),
-            None,
-            False,
+            None, False,
             [html.I(className="bi bi-lightning-fill me-2"), 'Generar Mapa'],
-            True,
-            {'status': 'idle'},
-            False,
-            True
+            True, {'status': 'idle'}, False, True
         )
     
     status = PROCESS_STATUS[process_id]
     current_status = status['status']
-    
-    # Calcular tiempo transcurrido
     tiempo_transcurrido = time.time() - status['start_time']
     minutos = int(tiempo_transcurrido // 60)
     segundos = int(tiempo_transcurrido % 60)
+    tipo_analisis = status.get('tipo_analisis', 'Análisis')
     
     if current_status == 'processing':
-        # Aún procesando - mostrar progreso
         progress_message = dbc.Alert([
             html.Div([
-                html.I(className="bi bi-hourglass-split spin", style={'fontSize': '3rem', 'color': 'var(--accent)', 'marginBottom': '15px'})
+                html.I(className="bi bi-hourglass-split spin", 
+                      style={'fontSize': '3rem', 'color': 'var(--accent)', 'marginBottom': '15px'})
             ], className='text-center'),
-            html.H5("Generando Mapa de Peligro", className="alert-heading text-center"),
+            html.H5(f"Generando {tipo_analisis}", className="alert-heading text-center"),
             html.Hr(style={'opacity': '0.5'}),
             html.Div([
                 html.Div(className='summary-item', children=[
@@ -1314,7 +1398,7 @@ def check_process_status(n_intervals, process_id):
                 ]),
                 html.Div(className='summary-item', children=[
                     html.I(className="bi bi-info-circle"),
-                    html.Span("El proceso puede tomar entre 2-10 minutos dependiendo del área")
+                    html.Span("El proceso puede tomar entre 2-10 minutos según el área")
                 ])
             ], className='mt-3'),
             html.P("Esta página se actualizará automáticamente cuando esté listo...", 
@@ -1323,23 +1407,41 @@ def check_process_status(n_intervals, process_id):
         ], color="info", className='border-0')
         
         return (
-            progress_message,
-            None,
-            True,
+            progress_message, None, True,
             [html.I(className="bi bi-hourglass-split spin me-2"), f'Procesando... {minutos}m {segundos}s'],
-            False,  # Mantener interval activo
-            {'status': 'processing', 'time': f'{minutos}m {segundos}s'},
-            True,  # Deshabilitar botón generar
-            True   # Deshabilitar botón descargar
+            False, {'status': 'processing', 'time': f'{minutos}m {segundos}s'},
+            True, True
         )
     
     elif current_status == 'completed':
-        # Proceso completado exitosamente
         filepath = status['filepath']
         file_size_mb = status['file_size']
         duration = status['duration']
         dur_min = int(duration // 60)
         dur_sec = int(duration % 60)
+        
+        if status.get('map_type') == 'elementos':
+            descripcion_items = [
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-list-check"),
+                    html.Span([html.Strong("Elementos:"), " Agrícola, CP, IE, Vías"])
+                ]),
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-layers"),
+                    html.Span([html.Strong("Capas:"), " 6 capas de infraestructura"])
+                ])
+            ]
+        else:
+            descripcion_items = [
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-bar-chart"),
+                    html.Span([html.Strong("Parámetros:"), " Pendiente, Geomorfología, PP, Geología, Distancia río"])
+                ]),
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-graph-up"),
+                    html.Span([html.Strong("Clasificación:"), " Baja, Media, Alta, Muy Alta"])
+                ])
+            ]
         
         success_alert = html.Div([
             dbc.Alert([
@@ -1363,14 +1465,7 @@ def check_process_status(n_intervals, process_id):
                         html.I(className="bi bi-clock"),
                         html.Span([html.Strong("Tiempo total:"), f" {dur_min}m {dur_sec}s"])
                     ]),
-                    html.Div(className='summary-item', children=[
-                        html.I(className="bi bi-bar-chart"),
-                        html.Span([html.Strong("Parámetros:"), " Pendiente, Geomorfología, Precipitacion, Geología,Distancia rio"])
-                    ]),
-                    html.Div(className='summary-item', children=[
-                        html.I(className="bi bi-graph-up"),
-                        html.Span([html.Strong("Clasificación:"), " Baja, Media, Alta, Muy Alta"])
-                    ])
+                    *descripcion_items
                 ], className='mt-3')
             ], color="success", className='border-0 mb-3'),
             
@@ -1385,7 +1480,6 @@ def check_process_status(n_intervals, process_id):
             ], className='download-section')
         ])
         
-        # Limpiar el estado del proceso después de 30 segundos
         def cleanup():
             time.sleep(30)
             if process_id in PROCESS_STATUS:
@@ -1395,18 +1489,13 @@ def check_process_status(n_intervals, process_id):
         threading.Thread(target=cleanup, daemon=True).start()
         
         return (
-            success_alert,
-            filepath,
-            False,
+            success_alert, filepath, False,
             [html.I(className="bi bi-lightning-fill me-2"), 'Generar Mapa'],
-            True,  # Detener interval
-            {'status': 'completed', 'filepath': filepath},
-            False,  # Habilitar botón generar
-            False   # Habilitar botón descargar
+            True, {'status': 'completed', 'filepath': filepath},
+            False, False
         )
     
     elif current_status == 'error':
-        # Error en el proceso
         error_msg = status.get('error', 'Error desconocido')
         duration = status.get('duration', tiempo_transcurrido)
         dur_min = int(duration // 60)
@@ -1422,7 +1511,7 @@ def check_process_status(n_intervals, process_id):
             html.P(f"Ocurrió un error: {error_msg}", style={'fontSize': '0.9rem'}),
             html.P("Verifica:", style={'fontSize': '0.95rem', 'marginTop': '15px'}),
             html.Ul([
-                html.Li("Que existan los archivos de peligro (Pendiente, Geomorfología, PP)"),
+                html.Li("Que existan los archivos necesarios en las rutas correctas"),
                 html.Li("Que el distrito tenga datos disponibles"),
                 html.Li("Los logs en la terminal para más detalles")
             ], style={'fontSize': '0.9rem'}),
@@ -1430,7 +1519,6 @@ def check_process_status(n_intervals, process_id):
                    style={'fontSize': '0.85rem', 'color': 'var(--text-secondary)', 'marginTop': '15px'})
         ], color="danger", className='border-0')
         
-        # Limpiar el estado del proceso
         def cleanup():
             time.sleep(30)
             if process_id in PROCESS_STATUS:
@@ -1439,15 +1527,12 @@ def check_process_status(n_intervals, process_id):
         threading.Thread(target=cleanup, daemon=True).start()
         
         return (
-            error_alert,
-            None,
-            False,
+            error_alert, None, False,
             [html.I(className="bi bi-lightning-fill me-2"), 'Generar Mapa'],
-            True,  # Detener interval
-            {'status': 'error', 'error': error_msg},
-            False,  # Habilitar botón generar para reintentar
-            True    # Deshabilitar botón descargar
+            True, {'status': 'error', 'error': error_msg},
+            False, True
         )
+
 @app.callback(
     Output('download-map-image', 'data'),
     Input('download-button', 'n_clicks'),
@@ -1466,58 +1551,96 @@ def download_map(n_clicks, filepath):
 
 if __name__ == '__main__':
     print(f"\n{'='*80}")
-    print("🔍 VERIFICANDO ARCHIVOS DE PELIGRO".center(80))
+    print("🔍 VERIFICANDO ARCHIVOS NECESARIOS".center(80))
     print(f"{'='*80}")
     
+    # Verificar archivos de PELIGRO
     ruta_base_pendiente = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PELIGRO/PENDIENTE"
     ruta_base_geomorfo = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PELIGRO/GEOMORFOLOGIA"
     ruta_base_ppmax = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PELIGRO/PP_MAX"
     
+    print("\n📊 ARCHIVOS DE PELIGRO:")
     if os.path.exists(ruta_base_pendiente):
         pendiente_files = [f for r, d, files in os.walk(ruta_base_pendiente) for f in files if f.endswith('.shp')]
-        print(f"✅ PENDIENTE: {len(pendiente_files)} archivos")
+        print(f"   ✅ PENDIENTE: {len(pendiente_files)} archivos")
     else:
-        print("⚠️  PENDIENTE: No encontrada")
+        print("   ⚠️  PENDIENTE: No encontrada")
     
     if os.path.exists(ruta_base_geomorfo):
         geomorfo_files = [f for r, d, files in os.walk(ruta_base_geomorfo) for f in files if f.endswith('.shp')]
-        print(f"✅ GEOMORFOLOGÍA: {len(geomorfo_files)} archivos")
+        print(f"   ✅ GEOMORFOLOGÍA: {len(geomorfo_files)} archivos")
     else:
-        print("⚠️  GEOMORFOLOGÍA: No encontrada")
+        print("   ⚠️  GEOMORFOLOGÍA: No encontrada")
     
     if os.path.exists(ruta_base_ppmax):
         ppmax_files = [f for r, d, files in os.walk(ruta_base_ppmax) for f in files if f.endswith('.shp')]
-        print(f"✅ PP_MAX: {len(ppmax_files)} archivos")
+        print(f"   ✅ PP_MAX: {len(ppmax_files)} archivos")
     else:
-        print("⚠️  PP_MAX: No encontrada")
+        print("   ⚠️  PP_MAX: No encontrada")
     
-    print(f"{'='*80}\n")
+    # Verificar archivos de ELEMENTOS EXPUESTOS
+    print("\n🏗️ ARCHIVOS DE ELEMENTOS EXPUESTOS:")
+    elementos_paths = {
+        'AGRÍCOLA': f"{ruta_base}/DATA/EXPUESTO/AGRICOLA/AGRICOLA.shp",
+        'CENTROS POBLADOS': f"{ruta_base}/DATA/EXPUESTO/CP/CPOBLADO_ANTA.shp",
+        'INFRAESTRUCTURA EDUCATIVA': f"{ruta_base}/DATA/EXPUESTO/IE/IE_ANTA.shp",
+        'VÍA NACIONAL': f"{ruta_base}/DATA/MAPA DE UBICACION/VIAS/VIA NACIONAL/red_vial_nacional_dic18.shp",
+        'VÍA DEPARTAMENTAL': f"{ruta_base}/DATA/MAPA DE UBICACION/VIAS/VIA DEPARTAMENTAL/red_vial_departamental_dic18.shp",
+        'VÍA VECINAL': f"{ruta_base}/DATA/MAPA DE UBICACION/VIAS/VIA VECINAL/red_vial_vecinal_dic18.shp"
+    }
+    
+    for nombre, ruta in elementos_paths.items():
+        if os.path.exists(ruta):
+            print(f"   ✅ {nombre}: OK")
+        else:
+            print(f"   ⚠️  {nombre}: No encontrado")
+    
+    # Verificar GeoDataFrames cargados
+    print("\n🗺️ GEODATAFRAMES DE LÍMITES:")
+    if gdf_distritos is not None:
+        print(f"   ✅ Distritos: {len(gdf_distritos)} registros cargados")
+    else:
+        print(f"   ❌ Distritos: NO DISPONIBLE")
+    
+    if gdf_provincias is not None:
+        print(f"   ✅ Provincias: {len(gdf_provincias)} registros cargados")
+    else:
+        print(f"   ❌ Provincias: NO DISPONIBLE")
+    
+    if gdf_departamentos is not None:
+        print(f"   ✅ Departamentos: {len(gdf_departamentos)} registros cargados")
+    else:
+        print(f"   ❌ Departamentos: NO DISPONIBLE")
     
     print(f"\n{'='*80}")
-    print("🚀 DASHBOARD PROFESIONAL - Comprensión de riesgo".center(80))
+    print("🚀 DASHBOARD INTEGRADO - Comprensión de riesgo".center(80))
     print(f"{'='*80}")
     print("🎨 Diseño: Moderno y Profesional")
-    print("🎯 Paleta: Gradientes Azul-Rojo con Efectos Glassmorphism")
-    print("✨ Animaciones: Suaves y Fluidas")
-    print("💧 Tipos de Peligro: Inundación (Activo) | Deslizamiento | Heladas")
-    print("📊 Fórmula: (PENDIENTE + GEOMORFOLOGÍA + PP_MAX + GEOLOGIA + DISTANCIA_RIO) / 5")
-    print("📈 Clasificación: Baja | Media | Alta | Muy Alta")
-    print("⏱️  Timeout Extendido: Hasta 10 minutos para procesos largos")
-    print("🌐 Puerto: 8052")
-    print("🔗 URL: http://127.0.0.1:8052")
+    print("🎯 Funcionalidades:")
+    print("   📍 MAPAS DE PELIGRO:")
+    print("      • Inundación (Activo)")
+    print("      • Deslizamiento (Próximamente)")
+    print("      • Heladas (Próximamente)")
+    print("   🏗️ ELEMENTOS EXPUESTOS:")
+    print("      • Agrícola")
+    print("      • Centros Poblados")
+    print("      • Infraestructura Educativa")
+    print("      • Vías (Nacional, Departamental, Vecinal)")
+    print("🔧 Arquitectura: Modular y escalable")
+    print("⏱️ Timeout: 10 minutos para procesos largos")
+    print("🌐 Puerto: 8053")
+    print("🔗 URL: http://127.0.0.1:8053")
     print(f"{'='*80}\n")
     
-    # Configuración extendida del servidor para procesos largos
+    # Configuración extendida del servidor
     from werkzeug.serving import WSGIRequestHandler
-    
-    # Aumentar timeout de request a 10 minutos (600 segundos)
     WSGIRequestHandler.timeout = 600
-    
-    # Configurar el servidor Flask con timeouts extendidos
     app.server.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
     
     print("⚙️  Configuración de timeouts:")
     print(f"   • Request timeout: 600 segundos (10 minutos)")
-    print(f"   • Esto permite procesar áreas grandes sin interrupciones\n")
+    print(f"   • Procesamiento en segundo plano habilitado")
+    print(f"   • Threading habilitado para múltiples usuarios\n")
     
-    app.run(debug=True, port=8052, threaded=True)
+    # CAMBIO DE PUERTO A 8053 PARA EVITAR CONFLICTO
+    app.run(debug=True, port=8053, threaded=True)

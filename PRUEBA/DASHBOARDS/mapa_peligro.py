@@ -3,7 +3,8 @@
 🎯 SCRIPT INTEGRADO: MAPA DE PELIGRO CON 5 PARÁMETROS + CENTROS POBLADOS
 - Genera automáticamente el shapefile de distancia a ríos desde el DEM
 - Calcula el mapa de peligro combinando: Pendiente + Geomorfología + PP Máxima + Distancia a Ríos + Geología
-- Muestra centros poblados como referencia
+- Muestra centros poblados con etiquetas FUERA de la zona de estudio
+- Líneas blancas gruesas y separación automática entre etiquetas
 """
 
 import geopandas as gpd
@@ -64,13 +65,13 @@ ETIQUETAS_PELIGRO = ['Baja', 'Media', 'Alta', 'Muy Alta']
 RANGOS_PELIGRO = [1.00, 2.00, 3.00, 4.00, 5.00]
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
-# 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS
+# 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS (MEJORADAS)
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblados, ax, radio_offset=0.08):
+def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblados, ax, radio_offset=0.12):
     """
     Agrega etiquetas de centros poblados FUERA del límite distrital de manera ordenada.
-    Las etiquetas salen perpendiculares al límite sin cruzarlo.
+    Las etiquetas salen bien lejos del límite y se distribuyen evitando solapamiento.
     
     Parámetros:
     -----------
@@ -81,7 +82,7 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
     ax : matplotlib.axes.Axes
         Eje de matplotlib donde dibujar
     radio_offset : float
-        Distancia de separación de la etiqueta del límite
+        Distancia de separación de la etiqueta del límite (aumentado a 0.12)
     """
     
     if gdf_centros_poblados is None or len(gdf_centros_poblados) == 0:
@@ -103,8 +104,12 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
     alto_distrito = maxy - miny
     escala = max(ancho_distrito, alto_distrito)
     
-    # Distancia perpendicular del límite
+    # Distancia perpendicular del límite (MÁS LEJOS)
     offset_perpendicular = escala * radio_offset
+    
+    # Lista para almacenar posiciones de etiquetas y evitar solapamiento
+    posiciones_etiquetas = []
+    distancia_minima_entre_etiquetas = escala * 0.04  # Separación mínima entre etiquetas
     
     for idx, (i, row) in enumerate(gdf_centros_poblados.iterrows()):
         try:
@@ -141,17 +146,44 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
             else:
                 dx_norm, dy_norm = 1, 0
             
-            # Calcular posición de la etiqueta FUERA del límite
+            # Calcular posición INICIAL de la etiqueta FUERA del límite
             x_label = punto_limite.x + dx_norm * offset_perpendicular
             y_label = punto_limite.y + dy_norm * offset_perpendicular
             
-            # Dibujar línea delgada sólida desde el punto hasta la etiqueta
+            # 🆕 VERIFICAR SI HAY SOLAPAMIENTO CON ETIQUETAS ANTERIORES
+            intentos_reubicacion = 0
+            max_intentos = 12
+            offset_adicional = 0
+            
+            while intentos_reubicacion < max_intentos:
+                # Verificar distancia con todas las etiquetas ya colocadas
+                muy_cerca = False
+                for pos_anterior in posiciones_etiquetas:
+                    dist = np.sqrt((x_label - pos_anterior[0])**2 + (y_label - pos_anterior[1])**2)
+                    if dist < distancia_minima_entre_etiquetas:
+                        muy_cerca = True
+                        break
+                
+                if not muy_cerca:
+                    # Posición válida encontrada
+                    break
+                else:
+                    # Reubicar: alejar más la etiqueta progresivamente
+                    intentos_reubicacion += 1
+                    offset_adicional = escala * 0.02 * intentos_reubicacion
+                    x_label = punto_limite.x + dx_norm * (offset_perpendicular + offset_adicional)
+                    y_label = punto_limite.y + dy_norm * (offset_perpendicular + offset_adicional)
+            
+            # Guardar la posición final de esta etiqueta
+            posiciones_etiquetas.append((x_label, y_label))
+            
+            # 🆕 DIBUJAR LÍNEA BLANCA GRUESA desde el punto hasta la etiqueta
             ax.plot(
                 [x_orig, x_label],
                 [y_orig, y_label],
-                'k-',  # Línea negra sólida
-                linewidth=0.45,
-                alpha=0.6,
+                'w-',  # Línea BLANCA sólida
+                linewidth=0.8,  # MÁS GRUESA (antes era 0.45)
+                alpha=0.95,
                 zorder=5
             )
             
@@ -162,16 +194,16 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
             ax.text(
                 x_label, y_label,
                 nombre,
-                fontsize=5.8,
+                fontsize=6.2,  # Ligeramente más grande
                 fontweight='bold',
                 ha='center',
                 va='center',
                 bbox=dict(
-                    boxstyle='round,pad=0.3',
-                    facecolor='yellow',
+                    boxstyle='round,pad=0.35',
+                    facecolor='white',
                     edgecolor='black',
-                    alpha=0.93,
-                    linewidth=0.5
+                    alpha=0.8,
+                    linewidth=0.6
                 ),
                 zorder=8
             )
@@ -1121,8 +1153,8 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
                                     alpha=0.95,
                                     zorder=10)
                 
-                # 🎯 AGREGAR ETIQUETAS PERPENDICULARES AL LÍMITE DISTRITAL
-                agregar_etiquetas_ordenadas_circularmente(gdf_distrito, centros_en_mapa, ax_main, radio_offset=0.06)
+                # 🎯 AGREGAR ETIQUETAS PERPENDICULARES AL LÍMITE DISTRITAL (CON SEPARACIÓN)
+                agregar_etiquetas_ordenadas_circularmente(gdf_distrito, centros_en_mapa, ax_main, radio_offset=0.12)
                 
                 print(f"      ✅ {len(centros_en_mapa)} centros poblados etiquetados")
             else:
@@ -1220,7 +1252,8 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             print(f"   📁 Ubicación: {ruta_guardado_final}")
             print(f"   📊 Tamaño: {file_size:.2f} MB")
             print(f"   🎯 Parámetros: 5 (Pendiente + Geomorfología + PP Máxima + Distancia a Ríos + Geología)")
-            print(f"   🏘️ Centros poblados: Incluidos con etiquetas circulares")
+            print(f"   🏘️ Centros poblados: Etiquetas FUERA de zona con líneas blancas gruesas")
+            print(f"   ✨ Separación automática anti-solapamiento activada")
             print("="*80 + "\n")
             return ruta_guardado_final
         else:
@@ -1233,3 +1266,17 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         traceback.print_exc()
         plt.close(fig)
         return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# 🚀 EJECUCIÓN DEL SCRIPT
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+
+if __name__ == "__main__":
+    # EJEMPLO DE USO
+    generar_mapa_peligro(
+        nombre_usuario="USUARIO_TEST",
+        departamento_sel="CUSCO",
+        provincia_sel="ANTA",
+        distrito_sel="PUCYURA"
+    )

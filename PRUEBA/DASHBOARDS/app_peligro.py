@@ -1,4 +1,4 @@
-# Archivo: app_peligro.py - DASHBOARD COMPLETO Y CORREGIDO
+# Archivo: app_peligro.py - DASHBOARD COMPLETO Y CORREGIDO CON BLOQUEO DE UBICACIÓN
 
 from dash import Dash, html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
@@ -129,6 +129,13 @@ app.index_string = '''
                 box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.1) !important;
                 background: rgba(15, 52, 96, 0.8) !important;
                 color: var(--text-primary) !important;
+            }
+            
+            .form-control:disabled, .form-select:disabled {
+                background: rgba(52, 73, 94, 0.4) !important;
+                border-color: var(--border) !important;
+                opacity: 0.6;
+                cursor: not-allowed !important;
             }
             
             .form-control::placeholder {
@@ -263,7 +270,6 @@ app.index_string = '''
                 transition: all 0.3s ease;
             }
             
-            /* ✅ CORRECCIÓN: BOTÓN TODO VERDE CUANDO ACTIVO */
             .btn-tipo-active {
                 background: linear-gradient(135deg, #27ae60 0%, #229954 100%) !important;
                 border-color: #27ae60 !important;
@@ -577,6 +583,11 @@ app.index_string = '''
                 margin-top: 15px;
             }
             
+            .location-locked {
+                background: rgba(52, 152, 219, 0.08) !important;
+                border-color: var(--info) !important;
+            }
+            
             @media (max-width: 768px) {
                 .main-container {
                     padding: 1rem;
@@ -795,6 +806,7 @@ dashboard_layout = dbc.Container([
     dcc.Store(id='generation-status', storage_type='memory', data={'status': 'idle'}),
     dcc.Store(id='peligro-downloaded', storage_type='memory', data=False),
     dcc.Store(id='elementos-downloaded', storage_type='memory', data=False),
+    dcc.Store(id='ubicacion-locked', storage_type='memory', data=False),
     
     dcc.Interval(id='check-process', interval=2000, disabled=True),
     
@@ -855,6 +867,55 @@ dashboard_layout = dbc.Container([
                     
                     html.Hr(),
                     
+                    # SECCIÓN: UBICACIÓN GEOGRÁFICA
+                    html.Div([
+                        html.Label([
+                            html.I(className="bi bi-geo-alt"),
+                            "Zona de Estudio"
+                        ], style={'marginBottom': '15px'}),
+                        
+                        html.Div([
+                            html.Label([
+                                html.I(className="bi bi-globe"),
+                                "Región / Departamento"
+                            ]),
+                            dcc.Dropdown(
+                                id='departamento-dropdown',
+                                options=LISTA_DEPARTAMENTOS,
+                                placeholder='Seleccione región',
+                                className='mb-3'
+                            )
+                        ]),
+                        
+                        html.Div([
+                            html.Label([
+                                html.I(className="bi bi-pin-map"),
+                                "Provincia"
+                            ]),
+                            dcc.Dropdown(
+                                id='provincia-dropdown',
+                                placeholder='Seleccione provincia',
+                                disabled=True,
+                                className='mb-3'
+                            )
+                        ]),
+                        
+                        html.Div([
+                            html.Label([
+                                html.I(className="bi bi-buildings"),
+                                "Distrito"
+                            ]),
+                            dcc.Dropdown(
+                                id='distrito-dropdown',
+                                placeholder='Seleccione distrito',
+                                disabled=True,
+                                className='mb-4'
+                            )
+                        ])
+                    ]),
+
+                    html.Hr(),
+                    
                     # SECCIÓN: TIPOS DE PELIGRO
                     html.Div([
                         html.Label([
@@ -899,48 +960,9 @@ dashboard_layout = dbc.Container([
                             "Generar Mapa de Elementos Expuestos"
                         ], id='btn-elementos-expuestos', className='btn-tipo', n_clicks=0, disabled=True,
                         style={'width': '100%', 'fontSize': '0.85rem', 'padding': '16px 14px !important'})
-                    ], className='mb-4'),
+                    ], className='mb-4')
                     
-                    html.Hr(),
-                    
-                    html.Div([
-                        html.Label([
-                            html.I(className="bi bi-globe"),
-                            "Región / Departamento"
-                        ]),
-                        dcc.Dropdown(
-                            id='departamento-dropdown',
-                            options=LISTA_DEPARTAMENTOS,
-                            placeholder='Seleccione región',
-                            className='mb-4'
-                        )
-                    ]),
-                    
-                    html.Div([
-                        html.Label([
-                            html.I(className="bi bi-pin-map"),
-                            "Provincia"
-                        ]),
-                        dcc.Dropdown(
-                            id='provincia-dropdown',
-                            placeholder='Seleccione provincia',
-                            disabled=True,
-                            className='mb-4'
-                        )
-                    ]),
-                    
-                    html.Div([
-                        html.Label([
-                            html.I(className="bi bi-buildings"),
-                            "Distrito"
-                        ]),
-                        dcc.Dropdown(
-                            id='distrito-dropdown',
-                            placeholder='Seleccione distrito',
-                            disabled=True,
-                            className='mb-4'
-                        )
-                    ])
+
                 ])
             ], className='control-panel')
         ], lg=4, className='mb-4 mb-lg-0'),
@@ -1072,7 +1094,8 @@ def display_user_nav(session_data):
      Output('btn-elementos-expuestos', 'disabled'),
      Output('selected-tipo-peligro', 'data'),
      Output('selected-elementos-expuestos', 'data'),
-     Output('tipo-locked', 'data')],
+     Output('tipo-locked', 'data'),
+     Output('ubicacion-locked', 'data')],
     [Input('btn-inundacion', 'n_clicks'),
      Input('btn-deslizamiento', 'n_clicks'),
      Input('btn-heladas', 'n_clicks'),
@@ -1088,7 +1111,7 @@ def update_tipo_selection(inun_clicks, desli_clicks, heladas_clicks, elem_clicks
     
     # Estado inicial
     if not callback_context.triggered:
-        return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False)
+        return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False, False)
     
     button_id = callback_context.triggered[0]['prop_id'].split('.')[0]
     
@@ -1096,41 +1119,74 @@ def update_tipo_selection(inun_clicks, desli_clicks, heladas_clicks, elem_clicks
     if button_id == 'btn-inundacion' and not is_locked:
         print("✅ INUNDACIÓN SELECCIONADA - BOTÓN TODO VERDE")
         return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                True, 'inundacion', False, True)
+                True, 'inundacion', False, True, True)
     
     # ✅ CASO 2: Peligro descargado - Usuario selecciona elementos expuestos
     if peligro_down and not elem_down:
         if button_id == 'btn-elementos-expuestos':
             print("✅ ELEMENTOS EXPUESTOS SELECCIONADO - BOTÓN TODO VERDE")
             print("🔓 HABILITANDO: Botón Generar Mapa y Descargar")
-            # Resetea el botón de descarga para nueva generación
             return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
-                    True, 'inundacion', True, True)
+                    True, 'inundacion', True, True, True)
         else:
-            # Mantener inundación verde, elementos habilitado, generar deshabilitado
             return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                    False, 'inundacion', False, True)
+                    False, 'inundacion', False, True, True)
     
     # ✅ CASO 3: TODO descargado - ambos verdes, todo bloqueado
     if peligro_down and elem_down:
         print("🔒 TODO COMPLETADO - Esperando Nuevo Análisis")
         return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
-                True, 'inundacion', True, True)
+                True, 'inundacion', True, True, True)
     
     # Mantener estado locked con botón verde
     if is_locked:
         elementos_disabled = not peligro_down or elem_down
         return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                elementos_disabled, 'inundacion', False, True)
+                elementos_disabled, 'inundacion', False, True, True)
     
     # Estado por defecto
-    return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False)
+    return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False, False)
+
+# ==================== NUEVO CALLBACK: BLOQUEAR/DESBLOQUEAR UBICACIÓN ====================
+@app.callback(
+    [Output('departamento-dropdown', 'disabled'),
+     Output('provincia-dropdown', 'disabled', allow_duplicate=True),
+     Output('distrito-dropdown', 'disabled', allow_duplicate=True),
+     Output('ubicacion-locked', 'data', allow_duplicate=True)],
+    [Input('selected-tipo-peligro', 'data'),
+     Input('reset-button', 'n_clicks')],
+    [State('departamento-dropdown', 'value'),
+     State('provincia-dropdown', 'value'),
+     State('distrito-dropdown', 'value')],
+    prevent_initial_call=True
+)
+def lock_unlock_location(tipo_peligro, reset_clicks, depa, prov, dist):
+    from dash import callback_context
+    
+    button_id = callback_context.triggered[0]['prop_id'].split('.')[0]
+    
+    # 🔄 Si presionó RESET → Desbloquear todo
+    if button_id == 'reset-button':
+        print("\n🔓 DESBLOQUEANDO UBICACIÓN (Reset iniciado)")
+        return (False, False, False, False)
+    
+    # ✅ Si seleccionó peligro y completó ubicación → Bloquear
+    if tipo_peligro and all([depa, prov, dist]):
+        print(f"\n🔒 BLOQUEANDO UBICACIÓN:")
+        print(f"   • Departamento: {depa} ✓ BLOQUEADO")
+        print(f"   • Provincia: {prov} ✓ BLOQUEADO")
+        print(f"   • Distrito: {dist} ✓ BLOQUEADO")
+        return (True, True, True, True)
+    
+    # Por defecto: Desbloquear
+    return (False, False, False, False)
 
 @app.callback(
     Output('provincia-dropdown', 'options'), 
     Output('provincia-dropdown', 'disabled'), 
     Output('provincia-dropdown', 'value'), 
-    Input('departamento-dropdown', 'value')
+    Input('departamento-dropdown', 'value'),
+    prevent_initial_call=True
 )
 def update_provincias(departamento):
     if departamento: 
@@ -1141,7 +1197,8 @@ def update_provincias(departamento):
     Output('distrito-dropdown', 'options'), 
     Output('distrito-dropdown', 'disabled'), 
     Output('distrito-dropdown', 'value'), 
-    Input('provincia-dropdown', 'value')
+    Input('provincia-dropdown', 'value'),
+    prevent_initial_call=True
 )
 def update_distritos(provincia):
     if provincia: 
@@ -1164,35 +1221,28 @@ def update_distritos(provincia):
     prevent_initial_call=True
 )
 def enable_generate(user, depa, prov, dist, tipo_peligro, elem_exp, loading, peligro_down, elem_down, gen_status):
-    # Bloqueado si está procesando
     if loading:
         print("🔒 Procesando - Botón DESHABILITADO")
         return True
     
-    # ✅ CAMBIO: Si terminó de procesar (status completed) → Deshabilitar hasta que descargue
     if gen_status and gen_status.get('status') == 'completed':
         print("🔒 Procesamiento completado - Esperando descarga")
         return True
     
-    # Bloqueado si ya descargó elementos expuestos
     if elem_down:
         print("🔒 Todo completo - Botón DESHABILITADO")
         return True
     
-    # Bloqueado si descargó peligro pero NO seleccionó elementos
     if peligro_down and not elem_exp:
         print("🔒 Esperando selección de Elementos Expuestos")
         return True
     
-    # Formulario completo
     form_complete = all([user, depa, prov, dist])
     
-    # Caso: Generando elementos expuestos
     if peligro_down and elem_exp and form_complete:
         print("🔓 Listo para generar ELEMENTOS EXPUESTOS")
         return False
     
-    # Caso: Primera generación (peligro)
     if tipo_peligro and form_complete and not peligro_down:
         print("🔓 Listo para generar PELIGRO")
         return False
@@ -1455,7 +1505,6 @@ def check_process(n_intervals, process_id):
         
         threading.Thread(target=cleanup, daemon=True).start()
         
-        # ✅ CORRECCIÓN CRÍTICA: Botón Descargar SIN check, habilitado para que el usuario haga click
         print(f"\n{'='*60}")
         print(f"✅ PROCESAMIENTO COMPLETADO: {map_type.upper()}".center(60))
         print(f"{'='*60}")
@@ -1467,8 +1516,8 @@ def check_process(n_intervals, process_id):
                 [html.I(className="bi bi-lightning-fill me-2"), 'Generar Mapa'],
                 True, {'status': 'completed', 'filepath': filepath, 'map_type': map_type},
                 True, False,
-                [html.I(className="bi bi-download me-2"), 'Descargar'],  # ✅ SIN check
-                'w-100 mb-3 btn-info')  # ✅ Botón normal (clickeable)
+                [html.I(className="bi bi-download me-2"), 'Descargar'],
+                'w-100 mb-3 btn-info')
     
     elif current_status == 'error':
         error_msg = status.get('error', 'Error desconocido')
@@ -1504,36 +1553,96 @@ def check_process(n_intervals, process_id):
 # ==================== DESCARGAR Y ACTUALIZAR FLUJO ====================
 @app.callback(
     [Output('download-map-image', 'data'),
-     Output('download-button', 'children'),
-     Output('download-button', 'className'),
+     Output('download-button', 'children', allow_duplicate=True),
+     Output('download-button', 'className', allow_duplicate=True),
      Output('download-button', 'disabled', allow_duplicate=True),
      Output('peligro-downloaded', 'data'),
      Output('elementos-downloaded', 'data'),
      Output('reset-button', 'disabled'),
      Output('btn-elementos-expuestos', 'disabled', allow_duplicate=True),
      Output('generate-map-button', 'disabled', allow_duplicate=True),
-     Output('generation-status', 'data', allow_duplicate=True)],
+     Output('generation-status', 'data', allow_duplicate=True),
+     Output('map-container', 'children', allow_duplicate=True)],
     Input('download-button', 'n_clicks'),
     [State('map-filepath-store', 'data'),
      State('generation-status', 'data'),
      State('peligro-downloaded', 'data'),
      State('elementos-downloaded', 'data')],
-    prevent_initial_call=True
+    prevent_initial_call=True,
+    allow_duplicate=True
 )
 def download_file(n_clicks, filepath, gen_status, peligro_down, elem_down):
-    if not n_clicks or not filepath or not os.path.exists(filepath):
+    from dash import callback_context
+    
+    if not n_clicks:
         return (None, [html.I(className="bi bi-download me-2"), 'Descargar'],
-                'w-100 mb-3 btn-info', True, peligro_down, elem_down, True, True, True,
-                gen_status)
+                'w-100 mb-3 btn-info', False, peligro_down, elem_down, True, True, True,
+                gen_status, dbc.Alert("Error: Sin clicks", color="danger"))
+    
+    if not filepath:
+        return (None, [html.I(className="bi bi-download me-2"), 'Descargar'],
+                'w-100 mb-3 btn-info', False, peligro_down, elem_down, True, True, True,
+                gen_status, dbc.Alert("Error: No hay archivo para descargar", color="danger"))
+    
+    if not os.path.exists(filepath):
+        return (None, [html.I(className="bi bi-download me-2"), 'Descargar'],
+                'w-100 mb-3 btn-info', False, peligro_down, elem_down, True, True, True,
+                gen_status, dbc.Alert(f"Error: Archivo no existe: {filepath}", color="danger"))
+    
+    # Mostrar mensaje de descargando primero
+    downloading = dbc.Alert([
+        html.Div([
+            html.I(className="bi bi-download spin", 
+                  style={'fontSize': '3rem', 'color': 'var(--accent)', 'marginBottom': '15px'})
+        ], className='text-center'),
+        html.H5("📥 Descargando Archivo...", className="alert-heading text-center"),
+        html.Hr(style={'opacity': '0.5'}),
+        html.Div([
+            html.Div(className='summary-item', children=[
+                html.I(className="bi bi-file-earmark-image"),
+                html.Span([html.Strong("Archivo:"), html.Code(os.path.basename(filepath), 
+                          style={'fontSize': '0.85em', 'background': 'rgba(15, 52, 96, 0.8)', 
+                                 'padding': '4px 8px', 'borderRadius': '6px'})])
+            ]),
+            html.Div(className='summary-item', children=[
+                html.I(className="bi bi-hdd"),
+                html.Span([html.Strong("Tamaño:"), f" {os.path.getsize(filepath) / (1024*1024):.2f} MB"])
+            ])
+        ], className='mt-3'),
+        html.P("El archivo se está descargando a tu dispositivo...", 
+               className='text-center mt-3', style={'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
+    ], color="info", className='border-0')
     
     try:
         print(f"\n{'='*60}")
-        print("📥 DESCARGA INICIADA".center(60))
+        print("📥 INICIANDO DESCARGA".center(60))
         print(f"{'='*60}")
-        print(f"📁 Archivo: {filepath}")
+        print(f"📄 Archivo: {filepath}")
+        print(f"✓ Tamaño: {os.path.getsize(filepath) / (1024*1024):.2f} MB")
         
         map_type = gen_status.get('map_type', 'peligro') if gen_status else 'peligro'
         print(f"📊 Tipo: {map_type.upper()}")
+        
+        # Mostrar mensaje de éxito
+        success_msg = dbc.Alert([
+            html.Div([
+                html.I(className="bi bi-check-circle-fill success-icon")
+            ], className='text-center mb-3'),
+            html.H5("✅ ¡Descarga Completada!", className="alert-heading text-center"),
+            html.Hr(style={'opacity': '0.5'}),
+            html.Div([
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-file-earmark-image"),
+                    html.Span([html.Strong("Archivo:"), html.Code(os.path.basename(filepath), 
+                              style={'fontSize': '0.85em', 'background': 'rgba(15, 52, 96, 0.8)', 
+                                     'padding': '4px 8px', 'borderRadius': '6px'})])
+                ]),
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-check-lg"),
+                    html.Span([html.Strong("Estado:"), " ✅ Descargado correctamente"])
+                ])
+            ], className='mt-3')
+        ], color="success", className='border-0')
         
         if map_type == 'peligro':
             print(f"\n{'='*60}")
@@ -1541,38 +1650,44 @@ def download_file(n_clicks, filepath, gen_status, peligro_down, elem_down):
             print(f"{'='*60}")
             print("🔓 HABILITANDO: Botón Elementos Expuestos")
             print("🔒 Deshabilitando: Botón Descargar (ya descargado)")
-            print("🔒 Manteniendo: Botón Generar deshabilitado")
             print("⏳ Esperando: Selección de Elementos Expuestos")
             print(f"{'='*60}\n")
             
-            # ✅ Descarga peligro: deshabilita descarga, habilita elementos
             return (dcc.send_file(filepath),
                     [html.I(className="bi bi-check-circle me-2"), 'Descargado ✓'],
                     'w-100 mb-3 btn-downloaded', True,
                     True, False, True, False, True,
-                    {'status': 'idle'})
+                    {'status': 'idle'}, success_msg)
         else:
             print(f"\n{'='*60}")
             print("✅ MAPA DE ELEMENTOS EXPUESTOS DESCARGADO".center(60))
             print(f"{'='*60}")
             print("🔓 HABILITANDO: Botón Nuevo Análisis")
-            print("🔒 Deshabilitando: Botón Descargar (ya descargado)")
-            print("🔒 Bloqueando: Botón Generar")
-            print("🔒 Bloqueando: Botón Elementos Expuestos")
-            print("✨ Flujo completado - Usuario puede reiniciar")
+            print("✨ Flujo completado")
             print(f"{'='*60}\n")
             
-            # ✅ Descarga elementos: marca todo completado, habilita reset
             return (dcc.send_file(filepath),
                     [html.I(className="bi bi-check-circle me-2"), 'Descargado ✓'],
                     'w-100 mb-3 btn-downloaded', True,
                     True, True, False, True, True,
-                    {'status': 'idle'})
+                    {'status': 'idle'}, success_msg)
     except Exception as e:
-        print(f"\n❌ ERROR EN DESCARGA: {e}\n")
+        print(f"\n❌ ERROR EN DESCARGA: {e}")
+        import traceback
+        traceback.print_exc()
+        print()
+        error_alert = dbc.Alert([
+            html.Div([
+                html.I(className="bi bi-x-octagon-fill", 
+                       style={'fontSize': '2rem', 'color': '#c0392b', 'marginBottom': '10px'})
+            ], className='text-center'),
+            html.H5("Error en la Descarga", className="alert-heading text-center"),
+            html.Hr(style={'opacity': '0.5'}),
+            html.P(f"Detalle: {str(e)}", style={'fontSize': '0.9rem'})
+        ], color="danger", className='border-0')
         return (None, [html.I(className="bi bi-download me-2"), 'Descargar'],
                 'w-100 mb-3 btn-info', False, peligro_down, elem_down, True, True, False,
-                gen_status)
+                gen_status, error_alert)
 
 # ==================== RESETEAR TODO ====================
 @app.callback(
@@ -1588,15 +1703,17 @@ def download_file(n_clicks, filepath, gen_status, peligro_down, elem_down):
      Output('selected-tipo-peligro', 'data', allow_duplicate=True),
      Output('selected-elementos-expuestos', 'data', allow_duplicate=True),
      Output('map-filepath-store', 'data', allow_duplicate=True),
-     Output('generation-status', 'data', allow_duplicate=True)],
+     Output('generation-status', 'data', allow_duplicate=True),
+     Output('ubicacion-locked', 'data', allow_duplicate=True)],
     Input('reset-button', 'n_clicks'),
     prevent_initial_call=True
 )
 def reset_all(n_clicks):
     print("\n🔄 REINICIANDO TODO EL SISTEMA...")
+    print("   🔓 Desbloqueando campos de ubicación")
     print("   🔓 Habilitando botones de peligro")
     print("   🔒 Bloqueando botón elementos expuestos")
-    print("   🔄 Limpiando formularios")
+    print("   🗑️  Limpiando formularios")
     print("   🗑️  Limpiando estados\n")
     
     initial_message = dbc.Alert([
@@ -1615,7 +1732,7 @@ def reset_all(n_clicks):
     return (None, None, False, False,
             [html.I(className="bi bi-download me-2"), 'Descargar'],
             'w-100 mb-3 btn-info', True, initial_message,
-            False, None, False, None, {'status': 'idle'})
+            False, None, False, None, {'status': 'idle'}, False)
 
 if __name__ == '__main__':
     print(f"\n{'='*80}")
@@ -1629,26 +1746,36 @@ if __name__ == '__main__':
     print("   ✅ Después de descargar peligro → Se habilita Elementos Expuestos")
     print("   ✅ Seleccionar Elementos → Se vuelven a habilitar Generar y Descargar")
     print("   ✅ Flujo bloqueado correctamente en cada paso")
+    print("   ✅ UBICACIÓN SE BLOQUEA después de completar todos los campos")
+    print("   ✅ UBICACIÓN SE DESBLOQUEA al presionar 'Nuevo Análisis'")
     
-    print("\n📋 FLUJO DE TRABAJO COMPLETO:")
+    print("\n🔓 FLUJO DE TRABAJO COMPLETO:")
     print("   1️⃣  Seleccionar Tipo de Peligro → Botón TODO VERDE ✓")
     print("   2️⃣  Completar formulario → Habilita Generar Mapa")
-    print("   3️⃣  Click Generar → Procesando Peligro... (ambos botones bloqueados)")
-    print("   4️⃣  Procesamiento termina → SOLO Descargar habilitado ✅")
-    print("   5️⃣  Click Descargar Peligro → Botón 'Descargado ✓' (bloqueado)")
-    print("   6️⃣  SE HABILITA botón Elementos Expuestos 🔓")
-    print("   7️⃣  Seleccionar Elementos Expuestos → Botón TODO VERDE ✓")
-    print("   8️⃣  SE HABILITAN Generar y Descargar (vuelven normales)")
-    print("   9️⃣  Click Generar → Procesando Elementos... (ambos bloqueados)")
-    print("   🔟 Procesamiento termina → SOLO Descargar habilitado ✅")
-    print("   1️⃣1️⃣ Click Descargar Elementos → Botón 'Descargado ✓' (bloqueado)")
-    print("   1️⃣2️⃣ SE HABILITA 'Nuevo Análisis' 🔓")
-    print("   🔄 Click 'Nuevo Análisis' → Reinicia TODO desde cero")
+    print("   3️⃣  🔒 UBICACIÓN SE BLOQUEA automáticamente")
+    print("   4️⃣  Click Generar → Procesando Peligro... (ambos botones bloqueados)")
+    print("   5️⃣  Procesamiento termina → SOLO Descargar habilitado ✅")
+    print("   6️⃣  Click Descargar Peligro → Botón 'Descargado ✓' (bloqueado)")
+    print("   7️⃣  SE HABILITA botón Elementos Expuestos 🔓")
+    print("   8️⃣  Seleccionar Elementos Expuestos → Botón TODO VERDE ✓")
+    print("   9️⃣  SE HABILITAN Generar y Descargar (vuelven normales)")
+    print("   🔟 Click Generar → Procesando Elementos... (ambos bloqueados)")
+    print("   1️⃣1️⃣ Procesamiento termina → SOLO Descargar habilitado ✅")
+    print("   1️⃣2️⃣ Click Descargar Elementos → Botón 'Descargado ✓' (bloqueado)")
+    print("   1️⃣3️⃣ SE HABILITA 'Nuevo Análisis' 🔓")
+    print("   🔄 Click 'Nuevo Análisis' → 🔓 UBICACIÓN SE DESBLOQUEA")
+    print("   🔄 Reinicia TODO desde cero")
+    
+    print("\n🔒 BLOQUEO DE UBICACIÓN:")
+    print("   • Se activa cuando: Selecciona peligro + completa todos los campos")
+    print("   • Se desactiva cuando: Presiona 'Nuevo Análisis'")
+    print("   • El usuario NO puede cambiar ubicación una vez completada")
+    print("   • Esto asegura integridad de datos durante el análisis")
     
     print("\n🎨 ESTADOS DE BOTONES:")
     print("   🟢 VERDE con ✓ = Tipo seleccionado y activo")
     print("   ⚪ Normal = Disponible para selección")
-    print("   🔒 Gris = Bloqueado (no disponible aún)")
+    print("   🔘 Gris = Bloqueado (no disponible aún)")
     print("   🔄 Spinner = Procesando en segundo plano")
     print("   ✅ Descargado = Descarga completada exitosamente")
     

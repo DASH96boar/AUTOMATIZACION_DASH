@@ -1039,11 +1039,11 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         # 🆕 CALCULAR EL ÍNDICE DE PELIGRO CON 5 PARÁMETROS
         print("\n   [5/5] Calculando índice de peligro...")
         gdf_peligro['PELIGRO'] = (
-            gdf_peligro[col_pendi] + 
-            gdf_peligro[col_geomo] + 
-            gdf_peligro[col_ppmax] +
-            gdf_peligro[col_rio] +
-            gdf_peligro[col_geol]
+            0.5*gdf_peligro[col_pendi] + 
+            0.5*gdf_peligro[col_geomo] + 
+            1.0*gdf_peligro[col_ppmax] +
+            2.5*gdf_peligro[col_rio] +
+            0.5*gdf_peligro[col_geol]
         ) / 5.0
         
         # 🆕 MOSTRAR ESTADÍSTICAS DETALLADAS DE CADA PARÁMETRO

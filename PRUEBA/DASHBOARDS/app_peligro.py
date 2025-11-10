@@ -1792,4 +1792,4 @@ if __name__ == '__main__':
     WSGIRequestHandler.timeout = 600
     app.server.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
     
-    app.run(debug=True, port=8052, threaded=True)
+    app.run(debug=False, port=8052, threaded=True)

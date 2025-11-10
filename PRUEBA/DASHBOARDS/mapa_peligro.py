@@ -1092,7 +1092,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     gs_izquierda = grid[0, 0].subgridspec(3, 1, height_ratios=[0.08, 3.5, 0.42], hspace=0.08)
 
     ax_titulo = fig.add_subplot(gs_izquierda[0])
-    ax_titulo.text(0.5, 0.5, f"MAPA DE SUSCEPTIBILIDAD ANTE DESLIZAMIENTOS - DISTRITO DE {distrito_sel.upper()}",
+    ax_titulo.text(0.5, 0.5, f"MAPA DE SUSCEPTIBILIDAD ANTE INUNDACIÓN - DISTRITO DE {distrito_sel.upper()}",
                    ha='center', va='center', fontsize=11, fontweight="normal",
                    bbox=dict(boxstyle='square,pad=0.5', facecolor='white', 
                             edgecolor='black', linewidth=1.5, alpha=0.95))

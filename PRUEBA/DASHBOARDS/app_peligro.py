@@ -27,7 +27,7 @@ app = Dash(
     suppress_callback_exceptions=True
 )
 
-# CSS COMPLETO CON CORRECCIONES
+# CSS 
 app.index_string = '''
 <!DOCTYPE html>
 <html>

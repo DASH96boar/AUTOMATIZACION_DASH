@@ -2,21 +2,14 @@
 ## SOY UNA ORGANIZACION PRIVADA
 
 
-
+# PARA QUE LO PRUEBES 
 # /opt/conda/envs/vic/bin/pip install dash dash_bootstrap_components geopandas contextily matplotlib_scalebar
 # /opt/conda/envs/vic/bin/pip install whitebox
-#### X SEA CASO
 
+
+#### X SEA CASO
 #pip install dash
 #pip install dash_bootstrap_components
 #pip install geopandas
 #pip install contextily
 #pip install matplotlib_scalebar
-
-### CORRECIONES
-###
-###
-###
-###
-###
-###

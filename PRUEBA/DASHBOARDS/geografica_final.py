@@ -42,6 +42,28 @@ def cargar_rios():
     return None
 
 # ════════════════════════════════════════════════════════════════════════
+# 🏞️ FUNCIÓN PARA CARGAR LAGOS Y LAGUNAS
+# ════════════════════════════════════════════════════════════════════════
+def cargar_lagos():
+    """Carga el shapefile de lagos y lagunas"""
+    ruta_directa = f"{ruta_base}/DATA/MAPA DE UBICACION/LAGOS/Lago_y_Laguna_IGN_IDEP_geogpsperu_SuyoPomalia.shp"
+    
+    if os.path.exists(ruta_directa):
+        try:
+            print(f"📂 Encontrado lagos en: {ruta_directa}")
+            gdf_lagos = gpd.read_file(ruta_directa)
+            if gdf_lagos.crs is None:
+                gdf_lagos.set_crs(epsg=4326, inplace=True)
+            gdf_lagos = gdf_lagos.to_crs(epsg=3857)
+            print(f"✅ Lagos cargados: {len(gdf_lagos)} registros")
+            return gdf_lagos
+        except Exception as e:
+            print(f"⚠️ Error cargando lagos: {e}")
+    
+    print(f"❌ No se encontró archivo de lagos en {ruta_directa}")
+    return None
+
+# ════════════════════════════════════════════════════════════════════════
 # 🛣️ FUNCIÓN PARA CARGAR VÍAS
 # ════════════════════════════════════════════════════════════════════════
 def cargar_vias():
@@ -75,17 +97,43 @@ def cargar_vias():
     
     return vias
 
-# (Aquí van todas tus funciones originales: add_north_arrow_blanco_completo, calculate_numeric_scale, etc. sin ningún cambio)
-def add_north_arrow_blanco_completo(ax, xy_pos=(0.93, 0.08), size=0.06):
-    x_pos, y_pos = xy_pos; s = size / 2; trans = ax.transAxes; inv_trans = ax.transData.inverted()
+def add_north_arrow_blanco_completo(ax, xy_pos=(0.95, 0.06), size=0.06):
+    x_pos, y_pos = xy_pos
+    s = size / 2
+    trans = ax.transAxes
+    inv_trans = ax.transData.inverted()
     body_width = s * 0.15
-    points_body = np.array([(x_pos - body_width / 2, y_pos + s * 0.5), (x_pos + body_width / 2, y_pos + s * 0.5), (x_pos + body_width / 2, y_pos - s * 0.5), (x_pos - body_width / 2, y_pos - s * 0.5)])
+    
+    # Puntos del cuerpo de la flecha
+    points_body = np.array([
+        (x_pos - body_width / 2, y_pos + s * 0.5), 
+        (x_pos + body_width / 2, y_pos + s * 0.5), 
+        (x_pos + body_width / 2, y_pos - s * 0.5), 
+        (x_pos - body_width / 2, y_pos - s * 0.5)
+    ])
     points_body_data = inv_trans.transform(trans.transform(points_body))
-    points_head = np.array([(x_pos, y_pos + s * 1.5), (x_pos - s * 0.5, y_pos + s * 0.5), (x_pos + s * 0.5, y_pos + s * 0.5)])
+    
+    # Puntos de la punta de la flecha
+    points_head = np.array([
+        (x_pos, y_pos + s * 1.5), 
+        (x_pos - s * 0.5, y_pos + s * 0.5), 
+        (x_pos + s * 0.5, y_pos + s * 0.5)
+    ])
     points_head_data = inv_trans.transform(trans.transform(points_head))
-    ax.add_patch(Polygon(points_body_data, facecolor='white', edgecolor='black', linewidth=1.5, zorder=11, transform=ax.transData))
-    ax.add_patch(Polygon(points_head_data, facecolor='white', edgecolor='black', linewidth=1.5, zorder=11, transform=ax.transData))
-    ax.text(x_pos, y_pos + s * 1.5 + 0.015, "N", transform=ax.transAxes, fontsize=16, fontweight='bold', ha='center', va='center', color='white', path_effects=[path_effects.withStroke(linewidth=3, foreground='black')])
+    
+    # Dibujar cuerpo con zorder alto
+    ax.add_patch(Polygon(points_body_data, facecolor='white', edgecolor='black', 
+                        linewidth=2, zorder=100, transform=ax.transData))
+    
+    # Dibujar punta con zorder alto
+    ax.add_patch(Polygon(points_head_data, facecolor='white', edgecolor='black', 
+                        linewidth=2, zorder=100, transform=ax.transData))
+    
+    # Texto "N" con zorder alto
+    ax.text(x_pos, y_pos + s * 1.5 + 0.015, "N", transform=ax.transAxes, 
+           fontsize=18, fontweight='bold', ha='center', va='center', 
+           color='black', zorder=101,
+           path_effects=[path_effects.withStroke(linewidth=3, foreground='white')])
 
 def calculate_numeric_scale(ax, fig):
     xlim = ax.get_xlim(); ground_width_m = xlim[1] - xlim[0]; fig_width_in = fig.get_size_inches()[0]
@@ -280,8 +328,9 @@ def generar_mapa_final(nombre_usuario, departamento_sel, provincia_sel, distrito
         print(f"❌ Error: No se pudo encontrar la geometría para el distrito '{distrito_sel}'.")
         return None
 
-    print("\n🌊 Cargando ríos y vías...")
+    print("\n🌊 Cargando ríos, lagos y vías...")
     gdf_rios = cargar_rios()
+    gdf_lagos = cargar_lagos()
     vias = cargar_vias()
 
     print("\n🎨 Generando layout del mapa...")
@@ -296,10 +345,10 @@ def generar_mapa_final(nombre_usuario, departamento_sel, provincia_sel, distrito
     ax_main = fig.add_subplot(gs_izquierda[1])
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # 🔧 MODIFICACIÓN: BBOX CON ASPECT RATIO CONSISTENTE (COPIADO DE VIAS_FINAL)
+    # 🔧 BBOX CON ASPECT RATIO CONSISTENTE
     # ═══════════════════════════════════════════════════════════════════════════
     minx, miny, maxx, maxy = gdf_distrito.total_bounds
-    buffer_factor = 0.15  # Mismo buffer que vias_final
+    buffer_factor = 0.15
     buffer_x = (maxx - minx) * buffer_factor
     buffer_y = (maxy - miny) * buffer_factor
     bbox_temp = (minx - buffer_x, miny - buffer_y, maxx + buffer_x, maxy + buffer_y)
@@ -325,29 +374,62 @@ def generar_mapa_final(nombre_usuario, departamento_sel, provincia_sel, distrito
     ax_main.set_aspect('equal', adjustable='box')
     
     try:
-        ctx.add_basemap(ax_main, source=ctx.providers.Esri.WorldImagery, attribution=False, zoom='auto')
+        # Mapa topográfico con ajuste de transparencia para hacerlo más blanco
+        ctx.add_basemap(ax_main, source=ctx.providers.OpenTopoMap, attribution=False, zoom='auto', alpha=0.6)
     except Exception as e:
         print(f"   ⚠️ No se pudo cargar el mapa base: {e}")
     
-    # Dibujar el distrito
-    gdf_distrito.plot(ax=ax_main, color="#a8dda8", edgecolor="black", linewidth=1.5, alpha=0.6, zorder=5)
+    # Dibujar límites de todos los distritos de la provincia con color plomo oscuro
+    print("   📍 Dibujando límites distritales...")
+    if not gdf_distritos_en_provincia.empty:
+        gdf_distritos_en_provincia.plot(ax=ax_main, facecolor='none', edgecolor='#5A5A5A', 
+                                        linewidth=0.9, linestyle='-', alpha=0.8, zorder=4)
+        
+        # Agregar etiquetas de los distritos (ENCIMA DE TODO)
+        for idx, row in gdf_distritos_en_provincia.iterrows():
+            if row[col_distr] != distrito_sel:  # No etiquetar el distrito principal
+                centroid = row.geometry.centroid
+                if bbox_main[0] < centroid.x < bbox_main[2] and bbox_main[1] < centroid.y < bbox_main[3]:
+                    distrito_nombre = str(row[col_distr]).upper() if row[col_distr] else ''
+                    ax_main.text(centroid.x, centroid.y, distrito_nombre,
+                                transform=ax_main.transData, fontsize=8.5, fontweight='bold',
+                                ha='center', va='center', color='black',
+                                path_effects=[path_effects.withStroke(linewidth=3, foreground='white')],
+                                zorder=150)  # Encima de todo
+    
+    # Dibujar el distrito seleccionado con color MORADO y más transparencia
+    gdf_distrito.plot(ax=ax_main, color="#9370DB", edgecolor="black", linewidth=1.5, alpha=0.35, zorder=5)
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # 🌊 DIBUJAR RÍOS (SIN ETIQUETAS)
+    # 🌊 DIBUJAR RÍOS (GROSOR MÁS DELGADO)
     # ═══════════════════════════════════════════════════════════════════════════
     if gdf_rios is not None:
         try:
             gdf_rios_clip = gdf_rios.clip(box(*bbox_main))
             if not gdf_rios_clip.empty:
                 print(f"   🌊 Dibujando ríos... ({len(gdf_rios_clip)} registros)")
-                gdf_rios_clip.plot(ax=ax_main, color='#00BFFF', linewidth=2.0, zorder=11)
+                gdf_rios_clip.plot(ax=ax_main, color='#1E90FF', linewidth=0.9, zorder=11)
         except Exception as e:
             print(f"   ⚠️ Error al recortar ríos: {e}")
     else:
         print("   ⚠️ No hay datos de ríos para mostrar")
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # 🛣️ DIBUJAR VÍAS (SIN CLASIFICACIÓN)
+    # 🏞️ DIBUJAR LAGOS Y LAGUNAS
+    # ═══════════════════════════════════════════════════════════════════════════
+    if gdf_lagos is not None:
+        try:
+            gdf_lagos_clip = gdf_lagos.clip(box(*bbox_main))
+            if not gdf_lagos_clip.empty:
+                print(f"   🏞️ Dibujando lagos... ({len(gdf_lagos_clip)} registros)")
+                gdf_lagos_clip.plot(ax=ax_main, color='#00CED1', edgecolor='#008B8B', linewidth=0.8, alpha=0.7, zorder=10)
+        except Exception as e:
+            print(f"   ⚠️ Error al recortar lagos: {e}")
+    else:
+        print("   ⚠️ No hay datos de lagos para mostrar")
+    
+    # ═══════════════════════════════════════════════════════════════════════════
+    # 🛣️ DIBUJAR VÍAS (TODAS CONTINUAS)
     # ═══════════════════════════════════════════════════════════════════════════
     print("   🛣️ Dibujando vías...")
     
@@ -356,7 +438,7 @@ def generar_mapa_final(nombre_usuario, departamento_sel, provincia_sel, distrito
         try:
             gdf_via_nacional_clip = vias['nacional'].clip(box(*bbox_main))
             if not gdf_via_nacional_clip.empty:
-                gdf_via_nacional_clip.plot(ax=ax_main, color='#FF0000', linewidth=2.2, zorder=12)
+                gdf_via_nacional_clip.plot(ax=ax_main, color='#FF0000', linewidth=1.2, linestyle='-', zorder=12)
                 print(f"   ✅ Vías nacionales: {len(gdf_via_nacional_clip)} registros")
         except Exception as e:
             print(f"   ⚠️ Error al dibujar vías nacionales: {e}")
@@ -366,17 +448,17 @@ def generar_mapa_final(nombre_usuario, departamento_sel, provincia_sel, distrito
         try:
             gdf_via_departamental_clip = vias['departamental'].clip(box(*bbox_main))
             if not gdf_via_departamental_clip.empty:
-                gdf_via_departamental_clip.plot(ax=ax_main, color='#32CD32', linewidth=1.8, zorder=13)
+                gdf_via_departamental_clip.plot(ax=ax_main, color='#32CD32', linewidth=1.0, linestyle='-', zorder=13)
                 print(f"   ✅ Vías departamentales: {len(gdf_via_departamental_clip)} registros")
         except Exception as e:
             print(f"   ⚠️ Error al dibujar vías departamentales: {e}")
     
-    # Vía Vecinal (sin clasificación)
+    # Vía Vecinal (línea continua)
     if vias['vecinal'] is not None:
         try:
             gdf_via_vecinal_clip = vias['vecinal'].clip(box(*bbox_main))
             if not gdf_via_vecinal_clip.empty:
-                gdf_via_vecinal_clip.plot(ax=ax_main, color='#FFFF00', linewidth=1.5, linestyle='--', zorder=15)
+                gdf_via_vecinal_clip.plot(ax=ax_main, color='#FFFF00', linewidth=0.8, linestyle='-', zorder=15)
                 print(f"   ✅ Vías vecinales: {len(gdf_via_vecinal_clip)} registros")
         except Exception as e:
             print(f"   ⚠️ Error al dibujar vías vecinales: {e}")
@@ -384,8 +466,26 @@ def generar_mapa_final(nombre_usuario, departamento_sel, provincia_sel, distrito
         print("   ⚠️ No se cargaron datos de vías vecinales")
     
     grillado_utm_proyectado(ax_main, bbox_main, ndiv=8)
-    add_north_arrow_blanco_completo(ax_main, xy_pos=(0.93, 0.08), size=0.06)
-    ax_main.add_artist(ScaleBar(1, units="m", location="lower left", box_alpha=0.6, border_pad=0.5, scale_loc='bottom'))
+    
+    # Agregar escala gráfica con mejor posición y estilo (encima de todo)
+    scalebar = ScaleBar(
+        1, 
+        units="m", 
+        location="lower left", 
+        box_alpha=0.8,
+        color='black',
+        box_color='white',
+        border_pad=0.6,
+        pad=0.5,
+        sep=4,
+        scale_loc='bottom',
+        font_properties={'size': 9, 'weight': 'bold'}
+    )
+    ax_main.add_artist(scalebar)
+    scalebar.set_zorder(100)  # Encima de todas las capas
+    
+    # Flecha de norte mejorada (encima de todo)
+    add_north_arrow_blanco_completo(ax_main, xy_pos=(0.95, 0.06), size=0.06)
     
     gs_memb_ley = gs_izquierda[2].subgridspec(1, 2, wspace=0.1)
     ax_membrete = fig.add_subplot(gs_memb_ley[0])
@@ -396,21 +496,23 @@ def generar_mapa_final(nombre_usuario, departamento_sel, provincia_sel, distrito
     ax_leyenda.axis('off')
     
     legend_elements = [
-        Patch(facecolor='#a8dda8', edgecolor='black', label='Área del Distrito'),
-        Line2D([0], [0], color='#00BFFF', lw=2.5, label='Ríos'),
-        Line2D([0], [0], color='#FF0000', lw=2.5, label='Vía Nacional'),
-        Line2D([0], [0], color='#32CD32', lw=2.5, label='Vía Departamental'),
-        Line2D([0], [0], color='#FFFF00', lw=2.5, linestyle='--', label='Vía Vecinal'),
-        Line2D([0], [0], color='black', lw=2, label='Límite Distrital'),
+        Patch(facecolor='#9370DB', edgecolor='black', label='Área del Distrito'),
+        Line2D([0], [0], color='#5A5A5A', lw=1.5, label='Límites Distritales'),
+        Line2D([0], [0], color='#1E90FF', lw=2.0, label='Ríos'),
+        Patch(facecolor='#00CED1', edgecolor='#008B8B', label='Lagos y Lagunas'),
+        Line2D([0], [0], color='#FF0000', lw=2.0, label='Vía Nacional'),
+        Line2D([0], [0], color='#32CD32', lw=2.0, label='Vía Departamental'),
+        Line2D([0], [0], color='#FFFF00', lw=2.0, label='Vía Vecinal'),
+        Line2D([0], [0], color='black', lw=2, label='Límite Distrital Principal'),
         Line2D([0], [0], color='black', ls='-', lw=1, label='Grillado UTM')
     ]
     
     leg = ax_leyenda.legend(
         handles=legend_elements, 
         loc='center', 
-        ncol=2,  # 2 COLUMNAS
+        ncol=2,
         frameon=True, 
-        fontsize=8,  # Reducido un poco para que quepa mejor
+        fontsize=8,
         title="LEYENDA", 
         title_fontproperties={'size': 10, 'weight': 'bold'},
         handletextpad=0.5,

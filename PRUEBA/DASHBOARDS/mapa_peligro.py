@@ -5,6 +5,7 @@
 - Calcula el mapa de peligro combinando: Pendiente + Geomorfología + PP Máxima + Distancia a Ríos + Geología
 - Muestra centros poblados con etiquetas FUERA de la zona de estudio
 - Líneas blancas gruesas y separación automática entre etiquetas
+- ARCHIVOS DE RÍOS SE GUARDAN EN CARPETA DEL USUARIO
 """
 
 import geopandas as gpd
@@ -41,9 +42,8 @@ AMARILLO_CLARO = "#FFEE58"
 RUTA_BASE_PENDIENTE = f"{ruta_base}/DATA/PELIGRO/PENDIENTE"
 RUTA_BASE_GEOMORFOLOGIA = f"{ruta_base}/DATA/PELIGRO/GEOMORFOLOGIA"
 RUTA_BASE_PPMAX = f"{ruta_base}/DATA/PELIGRO/PP_MAX"
-RUTA_BASE_RIOS = f"{ruta_base}/DATA/PELIGRO/DISTANCIA_RIO"
 RUTA_BASE_GEOLOGIA = f"{ruta_base}/DATA/PELIGRO/GEOLOGIA"
-RUTA_DEM = f"{RUTA_BASE_RIOS}/DEM.tif"
+RUTA_DEM = f"{ruta_base}/DATA/PELIGRO/DISTANCIA_RIO/DEM.tif"
 RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS POBLADOS /Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
 
 # CONFIGURACIÓN DE GENERACIÓN DE RÍOS
@@ -64,9 +64,9 @@ COLORES_PELIGRO = ['#00FF00', '#FFFF00', '#FFA500', '#FF0000']
 ETIQUETAS_PELIGRO = ['Baja', 'Media', 'Alta', 'Muy Alta']
 RANGOS_PELIGRO = [1.00, 2.00, 3.00, 4.00, 5.00]
 
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS (MEJORADAS)
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblados, ax, radio_offset=0.12):
     """
@@ -210,11 +210,11 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
         except Exception as e:
             continue
 
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # FUNCIONES PARA GENERAR RED DE RÍOS Y BUFFERS
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_folder="/tmp/hydro_temp"):
+def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_folder="/tmp/hydro_temp", nombre_distrito="distrito"):
     """
     Genera el shapefile de buffers de distancia a ríos con pesos a partir del DEM.
     
@@ -222,13 +222,14 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
     - distrito_shapefile: GeoDataFrame del distrito para recortar
     - output_folder: Carpeta donde se guardará el shapefile final
     - temp_folder: Carpeta temporal para archivos intermedios
+    - nombre_distrito: Nombre del distrito para el archivo shapefile
     
     Retorna:
     - ruta del shapefile generado o None si falla
     """
     
     if not HYDRO_AVAILABLE:
-        print("⌀ WhiteboxTools no está disponible. No se puede generar el shapefile de ríos.")
+        print("❌ WhiteboxTools no está disponible. No se puede generar el shapefile de ríos.")
         return None
     
     print("\n" + "="*80)
@@ -247,7 +248,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
     
     # Verificar que existe el DEM
     if not os.path.exists(RUTA_DEM):
-        print(f"⌀ No se encontró el DEM en: {RUTA_DEM}")
+        print(f"❌ No se encontró el DEM en: {RUTA_DEM}")
         return None
     
     print(f"[1/6] ✂️ Recortando DEM al distrito...")
@@ -306,7 +307,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         print("      ✅ DEM recortado exitosamente")
         
     except Exception as e:
-        print(f"⌀ Error recortando DEM: {e}")
+        print(f"❌ Error recortando DEM: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -368,7 +369,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         print(f"      ✅ Procesamiento hidrológico completado")
         
     except Exception as e:
-        print(f"⌀ Error en procesamiento hidrológico: {e}")
+        print(f"❌ Error en procesamiento hidrológico: {e}")
         print(f"   💡 Sugerencias:")
         print(f"      - Verifica que el DEM sea válido")
         print(f"      - Prueba con INTENSIDAD_RIOS = 'baja' o 'muy_baja' (más rápido)")
@@ -397,7 +398,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         print(f"      ✅ {len(rivers_clip)} segmentos de ríos")
         
     except Exception as e:
-        print(f"⌀ Error cargando ríos: {e}")
+        print(f"❌ Error cargando ríos: {e}")
         return None
     
     # [4/6] Generar buffers con pesos
@@ -443,28 +444,32 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         print(f"      ✅ {len(buffers_gdf)} clases de buffers generadas")
         
     except Exception as e:
-        print(f"⌀ Error generando buffers: {e}")
+        print(f"❌ Error generando buffers: {e}")
         return None
     
     # [5/6] Convertir a CRS 3857
-    print(f"[5/6] 📡 Convirtiendo a CRS 3857...")
+    print(f"[5/6] 🔡 Convirtiendo a CRS 3857...")
     
     try:
         buffers_gdf = buffers_gdf.to_crs(epsg=3857)
         print(f"      ✅ CRS convertido")
     except Exception as e:
-        print(f"⌀ Error convirtiendo CRS: {e}")
+        print(f"❌ Error convirtiendo CRS: {e}")
         return None
     
-    # [6/6] Guardar shapefile
+    # [6/6] Guardar shapefile con nombre personalizado del distrito
     print(f"[6/6] 💾 Guardando shapefile...")
     
     try:
-        output_shp = os.path.join(output_folder, "buffers_distancia_rios_PESOS.shp")
+        # Limpiar nombre del distrito (quitar espacios y caracteres especiales)
+        nombre_limpio = nombre_distrito.replace(' ', '_').replace('/', '_').replace('\\', '_')
+        nombre_archivo = f"distancia_rio_{nombre_limpio}.shp"
+        output_shp = os.path.join(output_folder, nombre_archivo)
         buffers_gdf.to_file(output_shp)
         
         print(f"      ✅ Shapefile guardado: {output_shp}")
         print(f"\n📊 Resumen:")
+        print(f"   - Distrito: {nombre_distrito}")
         print(f"   - Segmentos de ríos: {len(rivers_clip)}")
         print(f"   - Clases de buffers: {len(buffers_gdf)}")
         print(f"   - Área total: {buffers_gdf['area_km2'].sum():.4f} km²")
@@ -485,12 +490,12 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         return output_shp
         
     except Exception as e:
-        print(f"⌀ Error guardando shapefile: {e}")
+        print(f"❌ Error guardando shapefile: {e}")
         return None
 
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # FUNCIONES AUXILIARES PARA MAPAS
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 def add_north_arrow_blanco_completo(ax, xy_pos=(0.93, 0.08), size=0.06):
     x_pos, y_pos = xy_pos
@@ -741,7 +746,7 @@ def buscar_archivo_peligro(ruta_base, patron_busqueda, tipo_capa):
                 print(f"      ✅ Encontrado: {ruta_completa}")
     
     if not archivos_encontrados:
-        print(f"      ⌀ No se encontraron archivos para {tipo_capa}")
+        print(f"      ❌ No se encontraron archivos para {tipo_capa}")
         return None
     
     if len(archivos_encontrados) > 1:
@@ -762,9 +767,9 @@ def asignar_color_peligro(valor):
     else:
         return COLORES_PELIGRO[0]
 
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🎯 FUNCIÓN PRINCIPAL CON 5 PARÁMETROS + CENTROS POBLADOS
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distrito_sel):
     print("\n" + "="*80)
@@ -777,10 +782,13 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     try:
         carpeta_usuario = os.path.join(ruta_base, "USUARIOS", nombre_usuario)
         carpeta_salida = os.path.join(carpeta_usuario, "MAPA DE PELIGRO")
+        carpeta_rios_usuario = os.path.join(carpeta_usuario, "DISTANCIA_RIOS")
         os.makedirs(carpeta_salida, exist_ok=True)
+        os.makedirs(carpeta_rios_usuario, exist_ok=True)
         print(f"   - Carpeta de salida verificada: {carpeta_salida}")
+        print(f"   - Carpeta de ríos del usuario: {carpeta_rios_usuario}")
     except Exception as e:
-        print(f"⌀ Error creando la estructura de carpetas para el usuario: {e}")
+        print(f"❌ Error creando la estructura de carpetas para el usuario: {e}")
         return None
 
     print("\n📦 Cargando capas base...")
@@ -813,7 +821,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         gdf_oceano = None
 
     if gdf_departamentos is None or gdf_provincias is None or gdf_distritos is None:
-        print("⌀ Faltan capas base. Abortando.")
+        print("❌ Faltan capas base. Abortando.")
         return None
 
     col_dpto = next((c for c in ['NOMBDEP', 'DEPARTAMEN'] if c in gdf_departamentos.columns), None)
@@ -821,7 +829,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     col_distr = next((c for c in ['NOMBDIST', 'DISTRITO'] if c in gdf_distritos.columns), None)
 
     if not all([col_dpto, col_prov, col_distr]):
-        print("⌀ No se pudieron identificar las columnas de nombres")
+        print("❌ No se pudieron identificar las columnas de nombres")
         return None
 
     print("\n🔍 Filtrando datos del área seleccionada...")
@@ -832,46 +840,99 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     gdf_distritos_en_provincia = gdf_distritos[gdf_distritos[col_prov] == provincia_sel]
 
     if gdf_distrito.empty:
-        print(f"⌀ Error: No se pudo encontrar la geometría para el distrito '{distrito_sel}'.")
+        print(f"❌ Error: No se pudo encontrar la geometría para el distrito '{distrito_sel}'.")
         return None
 
     print(f"   ✅ Distrito encontrado con geometría válida")
 
-    # 🆕 GENERAR SHAPEFILE DE RÍOS AUTOMÁTICAMENTE
+    # 🆕 GENERAR SHAPEFILE DE RÍOS AUTOMÁTICAMENTE EN CARPETA DEL USUARIO
     print("\n" + "="*80)
-    print("🌊 PASO 1: GENERANDO SHAPEFILE DE DISTANCIA A RÍOS")
+    print("🌊 PASO 1: VERIFICANDO/GENERANDO SHAPEFILE DE DISTANCIA A RÍOS")
     print("="*80)
     
-    ruta_rios = os.path.join(RUTA_BASE_RIOS, "buffers_distancia_rios_PESOS.shp")
+    # Limpiar nombre del distrito para el archivo
+    nombre_distrito_limpio = distrito_sel.replace(' ', '_').replace('/', '_').replace('\\', '_')
+    nombre_archivo_rio = f"distancia_rio_{nombre_distrito_limpio}.shp"
+    ruta_rios = os.path.join(carpeta_rios_usuario, nombre_archivo_rio)
     
-    # Verificar si ya existe el shapefile
+    print(f"   🔍 Buscando shapefile: {nombre_archivo_rio}")
+    print(f"   📁 Primero en carpeta del usuario: {carpeta_rios_usuario}")
+    
+    # Verificar si ya existe el shapefile en la carpeta del usuario actual
     if os.path.exists(ruta_rios):
-        print(f"⚠️ El shapefile ya existe: {ruta_rios}")
-        print("   Opciones: [U]sar existente | [R]egenerar")
-        respuesta = input("   Seleccione (U/R) [por defecto: U]: ").strip().upper()
+        print(f"   ✅ ¡Shapefile encontrado en carpeta del usuario actual!")
+        print(f"   📍 Ubicación: {ruta_rios}")
+        print(f"   ⚡ Usando shapefile existente")
+    else:
+        print(f"   ℹ️ No se encontró en la carpeta del usuario actual")
         
-        if respuesta == 'R':
-            print("   📡 Regenerando shapefile de ríos...")
+        # 🆕 BUSCAR EN TODAS LAS CARPETAS DE USUARIOS
+        print(f"   🔎 Buscando en carpetas de otros usuarios...")
+        carpeta_usuarios = os.path.join(ruta_base, "USUARIOS")
+        shapefile_encontrado = None
+        
+        if os.path.exists(carpeta_usuarios):
+            for usuario in os.listdir(carpeta_usuarios):
+                carpeta_usuario_otro = os.path.join(carpeta_usuarios, usuario)
+                carpeta_rios_otro = os.path.join(carpeta_usuario_otro, "DISTANCIA_RIOS")
+                ruta_rio_otro = os.path.join(carpeta_rios_otro, nombre_archivo_rio)
+                
+                if os.path.exists(ruta_rio_otro):
+                    shapefile_encontrado = ruta_rio_otro
+                    print(f"   ✅ ¡Shapefile encontrado en carpeta del usuario '{usuario}'!")
+                    print(f"   📍 Ubicación: {ruta_rio_otro}")
+                    break
+        
+        if shapefile_encontrado:
+            # 🆕 COPIAR SHAPEFILE Y ARCHIVOS ASOCIADOS
+            print(f"   📋 Copiando shapefile a la carpeta del usuario actual...")
+            try:
+                import shutil
+                
+                # Copiar todos los archivos del shapefile (.shp, .shx, .dbf, .prj, .cpg)
+                base_name = os.path.splitext(shapefile_encontrado)[0]
+                extensiones = ['.shp', '.shx', '.dbf', '.prj', '.cpg', '.sbn', '.sbx']
+                
+                archivos_copiados = 0
+                for ext in extensiones:
+                    archivo_origen = base_name + ext
+                    if os.path.exists(archivo_origen):
+                        archivo_destino = os.path.join(carpeta_rios_usuario, 
+                                                      os.path.basename(archivo_origen))
+                        shutil.copy2(archivo_origen, archivo_destino)
+                        archivos_copiados += 1
+                
+                print(f"   ✅ {archivos_copiados} archivos copiados exitosamente")
+                print(f"   📁 Destino: {carpeta_rios_usuario}")
+                
+                # Verificar que se copió correctamente
+                if os.path.exists(ruta_rios):
+                    print(f"   ✅ Shapefile listo para usar")
+                else:
+                    raise Exception("Error en la copia del shapefile")
+                    
+            except Exception as e:
+                print(f"   ⚠️ Error copiando shapefile: {e}")
+                print(f"   🔄 Generando shapefile desde cero...")
+                shapefile_encontrado = None  # Forzar regeneración
+        
+        if not shapefile_encontrado:
+            # 🆕 GENERAR SHAPEFILE DESDE CERO
+            print(f"   ℹ️ No se encontró shapefile en ninguna carpeta de usuario")
+            print(f"   🆕 Generando shapefile de ríos por primera vez...")
+            print(f"   ⏳ Este proceso puede tardar varios minutos...")
+            
             ruta_rios = generar_shapefile_rios_con_pesos(
                 gdf_distrito, 
-                RUTA_BASE_RIOS,
-                temp_folder=os.path.join(carpeta_usuario, "temp_hydro")
+                carpeta_rios_usuario,
+                temp_folder=os.path.join(carpeta_usuario, "temp_hydro"),
+                nombre_distrito=distrito_sel
             )
             if not ruta_rios:
-                print("⌀ Error generando shapefile de ríos")
+                print("❌ Error generando shapefile de ríos")
                 return None
-        else:
-            print("   ✅ Usando shapefile existente")
-    else:
-        print("   🆕 Generando shapefile de ríos por primera vez...")
-        ruta_rios = generar_shapefile_rios_con_pesos(
-            gdf_distrito, 
-            RUTA_BASE_RIOS,
-            temp_folder=os.path.join(carpeta_usuario, "temp_hydro")
-        )
-        if not ruta_rios:
-            print("⌀ Error generando shapefile de ríos")
-            return None
+    
+    print(f"\n   ✅ Shapefile de ríos listo: {os.path.basename(ruta_rios)}")
 
     # 🆕 CARGAR LAS CINCO CAPAS DE PELIGRO
     print("\n" + "="*80)
@@ -961,7 +1022,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         print(f"\n   ✅ Todas las 5 capas cargadas exitosamente")
         
     except Exception as e:
-        print(f"\n⌀ Error cargando capas de peligro: {e}")
+        print(f"\n❌ Error cargando capas de peligro: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -983,11 +1044,11 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         print(f"      - Geología: {len(gdf_geologia_clip)} registros")
         
     except Exception as e:
-        print(f"⌀ Error recortando capas: {e}")
+        print(f"❌ Error recortando capas: {e}")
         return None
 
     # 🆕 COMBINAR LAS CINCO CAPAS MEDIANTE INTERSECCIÓN
-    print("\n📡 Combinando capas de peligro (5 parámetros)...")
+    print("\n🔀 Combinando capas de peligro (5 parámetros)...")
     try:
         # Intersección de las cinco capas
         print("   [1/5] Intersectando Pendiente ∩ Geomorfología...")
@@ -1081,7 +1142,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         print(f"   💾 Shapefile de debug guardado: {debug_shp}")
         
     except Exception as e:
-        print(f"⌀ Error combinando capas: {e}")
+        print(f"❌ Error combinando capas: {e}")
         import traceback
         traceback.print_exc()
         return None
@@ -1254,23 +1315,24 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             print(f"   🎯 Parámetros: 5 (Pendiente + Geomorfología + PP Máxima + Distancia a Ríos + Geología)")
             print(f"   🏘️ Centros poblados: Etiquetas FUERA de zona con líneas blancas gruesas")
             print(f"   ✨ Separación automática anti-solapamiento activada")
+            print(f"   📂 Archivos de ríos guardados en: {carpeta_rios_usuario}")
             print("="*80 + "\n")
             return ruta_guardado_final
         else:
-            print("⌀ El archivo no se guardó correctamente")
+            print("❌ El archivo no se guardó correctamente")
             return None
 
     except Exception as e:
-        print(f"⌀ Error al guardar el archivo: {e}")
+        print(f"❌ Error al guardar el archivo: {e}")
         import traceback
         traceback.print_exc()
         plt.close(fig)
         return None
 
 
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 # 🚀 EJECUCIÓN DEL SCRIPT
-# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
     # EJEMPLO DE USO

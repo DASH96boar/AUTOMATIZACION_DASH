@@ -925,12 +925,12 @@ dashboard_layout = dbc.Container([
                         html.Div(className='tipo-selector', children=[
                             dbc.Button([
                                 html.I(className="bi bi-droplet-fill"),
-                                "Inundación"
-                            ], id='btn-inundacion', className='btn-tipo', n_clicks=0),
+                                "Inundación Pluvial"
+                            ], id='btn-inundacion pluvial', className='btn-tipo', n_clicks=0),
                             
                             dbc.Button([
                                 html.I(className="bi bi-arrow-down-right-circle-fill"),
-                                "Deslizamiento",
+                                "Deslizamiento Pluvial",
                                 html.Span("PRÓXIMAMENTE", className="badge-soon")
                             ], id='btn-deslizamiento', className='btn-tipo', disabled=True, n_clicks=0),
                             
@@ -980,7 +980,7 @@ dashboard_layout = dbc.Container([
                                 html.H5("Sistema de Análisis de Riesgo", className="alert-heading text-center"),
                                 html.P("Configure los parámetros y seleccione el tipo de análisis:", className='text-center mb-3', style={'fontSize': '0.95rem', 'color': 'var(--text-secondary)'}),
                                 html.Ul([
-                                    html.Li([html.Strong("Peligros:"), " Inundación, Deslizamiento, Heladas"]),
+                                    html.Li([html.Strong("Peligros:"), " Inundación pluvial, Deslizamiento, Heladas"]),
                                     html.Li([html.Strong("Elementos Expuestos:"), " Agrícola, CP, IE, Vías"])
                                 ], style={'textAlign': 'left', 'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
                             ], color="light", className='border-0 mb-4')
@@ -1087,7 +1087,7 @@ def display_user_nav(session_data):
 
 # ==================== CALLBACK PRINCIPAL PARA BOTONES DE TIPO ====================
 @app.callback(
-    [Output('btn-inundacion', 'className'),
+    [Output('btn-inundacion pluvial', 'className'),
      Output('btn-deslizamiento', 'className'),
      Output('btn-heladas', 'className'),
      Output('btn-elementos-expuestos', 'className'),
@@ -1096,7 +1096,7 @@ def display_user_nav(session_data):
      Output('selected-elementos-expuestos', 'data'),
      Output('tipo-locked', 'data'),
      Output('ubicacion-locked', 'data')],
-    [Input('btn-inundacion', 'n_clicks'),
+    [Input('btn-inundacion pluvial', 'n_clicks'),
      Input('btn-deslizamiento', 'n_clicks'),
      Input('btn-heladas', 'n_clicks'),
      Input('btn-elementos-expuestos', 'n_clicks'),
@@ -1116,10 +1116,10 @@ def update_tipo_selection(inun_clicks, desli_clicks, heladas_clicks, elem_clicks
     button_id = callback_context.triggered[0]['prop_id'].split('.')[0]
     
     # ✅ CASO 1: Click en INUNDACIÓN (TODO VERDE)
-    if button_id == 'btn-inundacion' and not is_locked:
+    if button_id == 'btn-inundacion pluvial' and not is_locked:
         print("✅ INUNDACIÓN SELECCIONADA - BOTÓN TODO VERDE")
         return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                True, 'inundacion', False, True, True)
+                True, 'inundacion pluvial', False, True, True)
     
     # ✅ CASO 2: Peligro descargado - Usuario selecciona elementos expuestos
     if peligro_down and not elem_down:
@@ -1130,19 +1130,19 @@ def update_tipo_selection(inun_clicks, desli_clicks, heladas_clicks, elem_clicks
                     True, 'inundacion', True, True, True)
         else:
             return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                    False, 'inundacion', False, True, True)
+                    False, 'inundacion pluvial', False, True, True)
     
     # ✅ CASO 3: TODO descargado - ambos verdes, todo bloqueado
     if peligro_down and elem_down:
         print("🔒 TODO COMPLETADO - Esperando Nuevo Análisis")
         return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
-                True, 'inundacion', True, True, True)
+                True, 'inundacion pluvial', True, True, True)
     
     # Mantener estado locked con botón verde
     if is_locked:
         elementos_disabled = not peligro_down or elem_down
         return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                elementos_disabled, 'inundacion', False, True, True)
+                elementos_disabled, 'inundacion pluvial', False, True, True)
     
     # Estado por defecto
     return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False, False)
@@ -1275,7 +1275,7 @@ def update_summary(user, depa, prov, dist, tipo_peligro, elem_exp):
             html.Span([html.Strong("Análisis:"), " Elementos Expuestos"])
         ]))
     elif tipo_peligro:
-        peligro_map = {'inundacion': ('Inundación', 'bi-droplet-fill')}
+        peligro_map = {'inundacion pluvial': ('Inundación', 'bi-droplet-fill')}
         nombre, icono = peligro_map.get(tipo_peligro, ('Inundación', 'bi-droplet-fill'))
         items.append(html.Div(className='summary-item', children=[
             html.I(className=f"bi {icono}"),
@@ -1724,7 +1724,7 @@ def reset_all(n_clicks):
         html.P("Configure los parámetros y seleccione el tipo de análisis:", className='text-center mb-3', 
                style={'fontSize': '0.95rem', 'color': 'var(--text-secondary)'}),
         html.Ul([
-            html.Li([html.Strong("Peligros:"), " Inundación, Deslizamiento, Heladas"]),
+            html.Li([html.Strong("Peligros:"), " Inundación pluvial, Deslizamiento, Heladas"]),
             html.Li([html.Strong("Elementos Expuestos:"), " Agrícola, CP, IE, Vías"])
         ], style={'textAlign': 'left', 'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
     ], color="light", className='border-0 mb-4')

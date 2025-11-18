@@ -752,8 +752,8 @@ def generar_mapa_final(nombre_usuario, departamento_sel, provincia_sel, distrito
         
         if not distritos_otros.empty:
             # Dibujar TODOS los distritos visibles con borde NEGRO CONTINUO
-            distritos_otros.plot(ax=ax_main, facecolor='none', edgecolor='black', 
-                                linewidth=1.2, linestyle='-', zorder=6)
+            distritos_otros.plot(ax=ax_main, facecolor='none', edgecolor='dimgray', 
+                                linewidth=1.5, linestyle='-', zorder=6)
             
             # Agregar etiquetas a TODOS los distritos visibles
             for idx, row in distritos_otros.iterrows():

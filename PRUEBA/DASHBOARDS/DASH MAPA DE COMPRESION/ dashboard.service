@@ -1,0 +1,42 @@
+[Unit]
+Description=Dashboard Comprensión de Riesgo - Gunicorn WSGI Server
+Documentation=https://escuelar.org
+After=network.target
+Wants=network-online.target
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/dashboard-riesgo
+Environment="PATH=/var/www/dashboard-riesgo/venv/bin"
+Environment="PYTHONPATH=/var/www/dashboard-riesgo"
+Environment="LANG=es_PE.UTF-8"
+Environment="LC_ALL=es_PE.UTF-8"
+
+ExecStart=/var/www/dashboard-riesgo/venv/bin/gunicorn \
+    app_peligro_refactored:app.server \
+    --config /var/www/dashboard-riesgo/gunicorn_config.py
+
+Restart=always
+RestartSec=5
+StartLimitInterval=0
+
+TimeoutStartSec=0
+TimeoutStopSec=30
+
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/www/dashboard-riesgo/logs
+ReadWritePaths=/var/www/dashboard-riesgo/DATA
+
+Type=notify
+NotifyAccess=all
+
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=dashboard-riesgo
+
+[Install]
+WantedBy=multi-user.target

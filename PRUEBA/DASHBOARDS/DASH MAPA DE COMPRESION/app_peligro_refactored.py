@@ -1,4 +1,4 @@
-# Archivo: app_peligro.py - DASHBOARD COMPLETO Y CORREGIDO
+# Archivo: app_peligro_refactored.py - DASHBOARD COMPLETO REFACTORIZADO
 
 from dash import Dash, html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
@@ -19,610 +19,43 @@ PROCESS_STATUS = {}
 # ==================== CONFIGURACIÓN DE LA APP ====================
 app = Dash(
     __name__, 
-    external_stylesheets=[
-        dbc.themes.BOOTSTRAP,
-        dbc.icons.BOOTSTRAP,
-        "https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap"
-    ], 
+    external_stylesheets=[dbc.themes.BOOTSTRAP], 
     suppress_callback_exceptions=True
 )
 
-# CSS COMPLETO CON CORRECCIONES
-app.index_string = '''
-<!DOCTYPE html>
-<html>
-    <head>
-        {%metas%}
-        <title>{%title%}</title>
-        {%favicon%}
-        {%css%}
-        <style>
-            :root {
-                --primary: #1a1a2e;
-                --secondary: #16213e;
-                --accent: #e74c3c;
-                --accent-light: #ff6b5b;
-                --accent-dark: #c0392b;
-                --success: #27ae60;
-                --warning: #f39c12;
-                --info: #3498db;
-                --text-primary: #ecf0f1;
-                --text-secondary: #bdc3c7;
-                --border: #34495e;
-                --hover: #0f3460;
-            }
-            
-            * {
-                font-family: 'Poppins', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            }
-            
-            body {
-                background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
-                min-height: 100vh;
-                color: var(--text-primary);
-                overflow-x: hidden;
-            }
-            
-            html, body, #react-entry-point {
-                height: 100%;
-            }
-            
-            .navbar {
-                background: rgba(26, 26, 46, 0.95) !important;
-                backdrop-filter: blur(10px);
-                border-bottom: 2px solid var(--border);
-                padding: 1rem 2rem !important;
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-            }
-            
-            .navbar-brand {
-                font-weight: 800 !important;
-                font-size: 1.4rem !important;
-                letter-spacing: -0.5px !important;
-                color: var(--text-primary) !important;
-                display: flex;
-                align-items: center;
-                gap: 12px;
-            }
-            
-            .navbar-brand img {
-                height: 45px;
-                filter: drop-shadow(0 2px 8px rgba(231, 76, 60, 0.3));
-                transition: transform 0.3s ease;
-            }
-            
-            .navbar-brand:hover img {
-                transform: scale(1.05);
-            }
-            
-            .card {
-                background: rgba(22, 33, 62, 0.8) !important;
-                border: 1px solid var(--border) !important;
-                border-radius: 16px !important;
-                box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3) !important;
-                backdrop-filter: blur(10px);
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            }
-            
-            .card:hover {
-                border-color: var(--accent) !important;
-                box-shadow: 0 15px 50px rgba(231, 76, 60, 0.15) !important;
-                transform: translateY(-2px);
-            }
-            
-            .card-body {
-                padding: 2rem !important;
-            }
-            
-            .form-control, .form-select {
-                background: rgba(15, 52, 96, 0.6) !important;
-                border: 1.5px solid var(--border) !important;
-                border-radius: 12px !important;
-                padding: 12px 16px !important;
-                color: var(--text-primary) !important;
-                transition: all 0.3s ease;
-                font-size: 0.95rem;
-            }
-            
-            .form-control:focus, .form-select:focus {
-                border-color: var(--accent) !important;
-                box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.1) !important;
-                background: rgba(15, 52, 96, 0.8) !important;
-                color: var(--text-primary) !important;
-            }
-            
-            .form-control::placeholder {
-                color: var(--text-secondary);
-                opacity: 0.7;
-            }
-            
-            label {
-                color: var(--accent);
-                font-weight: 700;
-                font-size: 0.85rem;
-                text-transform: uppercase;
-                letter-spacing: 0.8px;
-                margin-bottom: 10px;
-                display: flex;
-                align-items: center;
-                gap: 8px;
-            }
-            
-            label i {
-                font-size: 1rem;
-                opacity: 0.9;
-            }
-            
-            .btn {
-                border-radius: 12px !important;
-                padding: 12px 24px !important;
-                font-weight: 700 !important;
-                font-size: 0.95rem !important;
-                letter-spacing: 0.5px !important;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                border: none !important;
-                text-transform: uppercase;
-            }
-            
-            .btn-success {
-                background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%) !important;
-                color: white !important;
-                box-shadow: 0 6px 20px rgba(231, 76, 60, 0.3) !important;
-            }
-            
-            .btn-success:hover:not(:disabled) {
-                background: linear-gradient(135deg, var(--accent-light) 0%, var(--accent) 100%) !important;
-                transform: translateY(-3px);
-                box-shadow: 0 12px 30px rgba(231, 76, 60, 0.4) !important;
-            }
-            
-            .btn-success:disabled {
-                background: linear-gradient(135deg, var(--border) 0%, var(--text-secondary) 100%) !important;
-                opacity: 0.5;
-                cursor: not-allowed !important;
-                box-shadow: none !important;
-            }
-            
-            .btn-info {
-                background: linear-gradient(135deg, var(--accent-dark) 0%, #a93226 100%) !important;
-                color: white !important;
-                box-shadow: 0 6px 20px rgba(192, 57, 43, 0.3) !important;
-            }
-            
-            .btn-info:hover:not(:disabled) {
-                background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%) !important;
-                transform: translateY(-3px);
-                box-shadow: 0 12px 30px rgba(192, 57, 43, 0.4) !important;
-            }
-            
-            .btn-danger {
-                background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%) !important;
-                color: white !important;
-                border-radius: 10px !important;
-                padding: 8px 16px !important;
-                font-size: 0.9rem !important;
-            }
-            
-            .btn-danger:hover {
-                transform: scale(1.05);
-            }
-            
-            .btn-warning {
-                background: linear-gradient(135deg, var(--warning) 0%, #e67e22 100%) !important;
-                color: white !important;
-                box-shadow: 0 6px 20px rgba(243, 156, 18, 0.3) !important;
-            }
-            
-            .btn-warning:hover:not(:disabled) {
-                background: linear-gradient(135deg, #e67e22 0%, var(--warning) 100%) !important;
-                transform: translateY(-3px);
-                box-shadow: 0 12px 30px rgba(243, 156, 18, 0.4) !important;
-            }
-            
-            .btn-warning:disabled {
-                background: linear-gradient(135deg, var(--border) 0%, var(--text-secondary) 100%) !important;
-                opacity: 0.5;
-                cursor: not-allowed !important;
-            }
-            
-            .btn-downloaded {
-                background: linear-gradient(135deg, var(--success) 0%, #229954 100%) !important;
-                color: white !important;
-                pointer-events: none;
-            }
-            
-            /* BOTONES DE TIPO (PELIGRO Y ELEMENTOS EXPUESTOS) */
-            .tipo-selector {
-                display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-                gap: 12px;
-                margin-bottom: 0px;
-            }
-            
-            .btn-tipo {
-                padding: 18px 14px !important;
-                border-radius: 14px !important;
-                font-weight: 700 !important;
-                font-size: 0.8rem !important;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-                border: 2px solid var(--border) !important;
-                background: rgba(15, 52, 96, 0.4) !important;
-                color: var(--text-secondary) !important;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 10px;
-                cursor: pointer;
-                position: relative;
-            }
-            
-            .btn-tipo i {
-                font-size: 2rem;
-                transition: all 0.3s ease;
-            }
-            
-            /* ✅ CORRECCIÓN: BOTÓN TODO VERDE CUANDO ACTIVO */
-            .btn-tipo-active {
-                background: linear-gradient(135deg, #27ae60 0%, #229954 100%) !important;
-                border-color: #27ae60 !important;
-                color: white !important;
-                box-shadow: 0 8px 25px rgba(39, 174, 96, 0.5) !important;
-                transform: translateY(-3px) scale(1.02);
-                cursor: default !important;
-                pointer-events: none !important;
-            }
-            
-            .btn-tipo-active i {
-                transform: scale(1.1);
-                color: white !important;
-            }
-            
-            .btn-tipo-active::after {
-                content: '✓';
-                position: absolute;
-                top: 8px;
-                right: 8px;
-                background: rgba(255, 255, 255, 0.3);
-                width: 24px;
-                height: 24px;
-                border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-weight: 900;
-                font-size: 0.9rem;
-                color: white !important;
-            }
-            
-            .btn-tipo:not(.btn-tipo-active):not(:disabled):hover {
-                border-color: #27ae60;
-                background: rgba(39, 174, 96, 0.2) !important;
-                transform: translateY(-2px);
-            }
-            
-            .btn-tipo:not(.btn-tipo-active):not(:disabled):active {
-                transform: translateY(0px) scale(0.98);
-            }
-            
-            .btn-tipo:disabled {
-                opacity: 0.35;
-                cursor: not-allowed !important;
-                background: rgba(15, 52, 96, 0.2) !important;
-            }
-            
-            .btn-tipo:disabled i {
-                opacity: 0.4;
-            }
-            
-            .badge-soon {
-                font-size: 0.65rem;
-                padding: 3px 8px;
-                background: rgba(241, 196, 15, 0.2);
-                color: #f1c40f;
-                border-radius: 6px;
-                font-weight: 600;
-                margin-top: -5px;
-            }
-            
-            .alert {
-                border-radius: 14px !important;
-                border: none !important;
-                padding: 24px !important;
-                box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2) !important;
-                backdrop-filter: blur(10px);
-            }
-            
-            .alert-success {
-                background: linear-gradient(135deg, rgba(39, 174, 96, 0.15) 0%, rgba(46, 204, 113, 0.1) 100%) !important;
-                border-left: 5px solid var(--success) !important;
-                color: var(--text-primary) !important;
-            }
-            
-            .alert-danger {
-                background: linear-gradient(135deg, rgba(231, 76, 60, 0.15) 0%, rgba(192, 57, 43, 0.1) 100%) !important;
-                border-left: 5px solid var(--accent) !important;
-                color: var(--text-primary) !important;
-            }
-            
-            .alert-warning {
-                background: linear-gradient(135deg, rgba(241, 196, 15, 0.15) 0%, rgba(230, 126, 34, 0.1) 100%) !important;
-                border-left: 5px solid #f39c12 !important;
-                color: var(--text-primary) !important;
-            }
-            
-            .alert-light {
-                background: rgba(236, 240, 241, 0.08) !important;
-                border-left: 5px solid var(--border) !important;
-                color: var(--text-primary) !important;
-            }
-            
-            .alert-info {
-                background: linear-gradient(135deg, rgba(52, 152, 219, 0.15) 0%, rgba(41, 128, 185, 0.1) 100%) !important;
-                border-left: 5px solid var(--info) !important;
-                color: var(--text-primary) !important;
-            }
-            
-            .alert-heading {
-                font-weight: 800 !important;
-                font-size: 1.1rem !important;
-                letter-spacing: -0.3px !important;
-            }
-            
-            hr {
-                border-top: 1px solid var(--border) !important;
-                opacity: 1;
-                margin: 1.5rem 0 !important;
-            }
-            
-            .section-title {
-                color: var(--text-primary);
-                font-weight: 800;
-                font-size: 1.2rem;
-                letter-spacing: -0.3px;
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                margin-bottom: 1.5rem;
-            }
-            
-            .section-title i {
-                color: var(--accent);
-                font-size: 1.4rem;
-            }
-            
-            .selection-summary {
-                background: rgba(15, 52, 96, 0.6);
-                padding: 20px;
-                border-radius: 12px;
-                border-left: 4px solid var(--accent);
-                color: var(--text-primary);
-            }
-            
-            .summary-item {
-                display: flex;
-                align-items: center;
-                gap: 12px;
-                padding: 10px 0;
-                font-size: 0.95rem;
-            }
-            
-            .summary-item i {
-                color: var(--accent);
-                font-size: 1.1rem;
-                min-width: 20px;
-            }
-            
-            .summary-item strong {
-                color: var(--accent);
-                font-weight: 700;
-            }
-            
-            .login-container {
-                background: rgba(22, 33, 62, 0.95);
-                backdrop-filter: blur(20px);
-                border-radius: 20px;
-                padding: 50px;
-                box-shadow: 0 25px 70px rgba(231, 76, 60, 0.2);
-                border: 1px solid var(--border);
-            }
-            
-            .login-title {
-                color: var(--text-primary);
-                font-weight: 900;
-                font-size: 2rem;
-                letter-spacing: -0.5px;
-                margin-bottom: 10px;
-            }
-            
-            .login-subtitle {
-                color: var(--text-secondary);
-                font-size: 0.95rem;
-                margin-bottom: 2rem;
-            }
-            
-            @keyframes fadeIn {
-                from {
-                    opacity: 0;
-                    transform: translateY(20px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-            
-            @keyframes slideInLeft {
-                from {
-                    opacity: 0;
-                    transform: translateX(-30px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateX(0);
-                }
-            }
-            
-            @keyframes slideInRight {
-                from {
-                    opacity: 0;
-                    transform: translateX(30px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateX(0);
-                }
-            }
-            
-            @keyframes spin {
-                from { transform: rotate(0deg); }
-                to { transform: rotate(360deg); }
-            }
-            
-            .animated {
-                animation: fadeIn 0.6s ease-out;
-            }
-            
-            .slide-left {
-                animation: slideInLeft 0.6s ease-out;
-            }
-            
-            .slide-right {
-                animation: slideInRight 0.6s ease-out;
-            }
-            
-            .spin {
-                animation: spin 2s linear infinite;
-            }
-            
-            ::-webkit-scrollbar {
-                width: 10px;
-            }
-            
-            ::-webkit-scrollbar-track {
-                background: var(--primary);
-            }
-            
-            ::-webkit-scrollbar-thumb {
-                background: linear-gradient(135deg, var(--border) 0%, var(--accent) 100%);
-                border-radius: 5px;
-            }
-            
-            ::-webkit-scrollbar-thumb:hover {
-                background: linear-gradient(135deg, var(--accent) 0%, var(--accent-light) 100%);
-            }
-            
-            .main-container {
-                padding: 2rem;
-                min-height: 100vh;
-            }
-            
-            .control-panel {
-                animation: slideInLeft 0.7s ease-out;
-            }
-            
-            .result-panel {
-                animation: slideInRight 0.7s ease-out;
-            }
-            
-            .contact-footer {
-                position: fixed;
-                bottom: 25px;
-                left: 25px;
-                background: rgba(26, 26, 46, 0.95);
-                backdrop-filter: blur(10px);
-                padding: 14px 22px;
-                border-radius: 12px;
-                border: 1px solid var(--border);
-                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-                z-index: 1000;
-                transition: all 0.3s ease;
-                display: flex;
-                gap: 16px;
-            }
-            
-            .contact-footer:hover {
-                background: rgba(22, 33, 62, 0.98);
-                border-color: var(--accent);
-                box-shadow: 0 12px 40px rgba(231, 76, 60, 0.2);
-                transform: translateY(-3px);
-            }
-            
-            .contact-footer a {
-                color: var(--text-secondary);
-                text-decoration: none;
-                font-weight: 600;
-                font-size: 0.85rem;
-                transition: all 0.3s ease;
-                display: flex;
-                align-items: center;
-                gap: 6px;
-            }
-            
-            .contact-footer a:hover {
-                color: var(--accent);
-            }
-            
-            .success-icon {
-                color: var(--success);
-                font-size: 3rem;
-            }
-            
-            .download-section {
-                background: rgba(39, 174, 96, 0.1);
-                padding: 20px;
-                border-radius: 12px;
-                border: 2px dashed var(--success);
-                margin-top: 15px;
-            }
-            
-            @media (max-width: 768px) {
-                .main-container {
-                    padding: 1rem;
-                }
-                
-                .card-body {
-                    padding: 1.5rem !important;
-                }
-                
-                .login-container {
-                    padding: 30px;
-                }
-                
-                .login-title {
-                    font-size: 1.5rem;
-                }
-                
-                .contact-footer {
-                    flex-direction: column;
-                    width: calc(100% - 50px);
-                    left: 25px;
-                    right: 25px;
-                }
-                
-                .tipo-selector {
-                    grid-template-columns: 1fr;
-                }
-            }
-        </style>
-    </head>
-    <body>
-        {%app_entry%}
-        <footer>
-            {%config%}
-            {%scripts%}
-            {%renderer%}
-        </footer>
-    </body>
-</html>
-'''
+# ==================== CARGAR HTML EXTERNO ====================
+try:
+    with open('index.html', 'r', encoding='utf-8') as f:
+        app.index_string = f.read()
+    print("✅ Template HTML cargado correctamente desde index.html")
+except FileNotFoundError:
+    print("⚠️ ADVERTENCIA: No se encontró index.html, usando template por defecto")
+    app.index_string = '''
+    <!DOCTYPE html>
+    <html lang="es">
+        <head>
+            {%metas%}
+            <title>{%title%}</title>
+            {%favicon%}
+            {%css%}
+        </head>
+        <body>
+            {%app_entry%}
+            <footer>
+                {%config%}
+                {%scripts%}
+                {%renderer%}
+            </footer>
+        </body>
+    </html>
+    '''
 
+# ==================== USUARIOS VÁLIDOS ====================
 VALID_USERS = {'admin': 'admin', 'usuario': 'admin'}
 
 def leer_sql(ruta):
     if not os.path.exists(ruta):
-        print(f"⚠️  ADVERTENCIA: La ruta del archivo SQL no existe: '{ruta}'")
+        print(f"⚠️ ADVERTENCIA: La ruta del archivo SQL no existe: '{ruta}'")
         return []
     with open(ruta, 'r', encoding='utf-8') as f:
         contenido = f.read()
@@ -673,7 +106,7 @@ try:
         print(f"   ✅ Distritos cargados: {len(gdf_distritos)} registros")
     else:
         gdf_distritos = None
-        print("   ⚠️  Distritos: No encontrados")
+        print("   ⚠️ Distritos: No encontrados")
     
     if os.path.exists(ruta_shp_provincias):
         gdf_provincias = gpd.read_file(ruta_shp_provincias)
@@ -684,7 +117,7 @@ try:
         print(f"   ✅ Provincias cargadas: {len(gdf_provincias)} registros")
     else:
         gdf_provincias = None
-        print("   ⚠️  Provincias: No encontradas")
+        print("   ⚠️ Provincias: No encontradas")
     
     if os.path.exists(ruta_shp_departamentos):
         gdf_departamentos = gpd.read_file(ruta_shp_departamentos)
@@ -695,10 +128,10 @@ try:
         print(f"   ✅ Departamentos cargados: {len(gdf_departamentos)} registros")
     else:
         gdf_departamentos = None
-        print("   ⚠️  Departamentos: No encontrados")
+        print("   ⚠️ Departamentos: No encontrados")
     
     if gdf_distritos is None or gdf_provincias is None or gdf_departamentos is None:
-        print("\n⚠️  ADVERTENCIA: Algunos GeoDataFrames no se pudieron cargar")
+        print("\n⚠️ ADVERTENCIA: Algunos GeoDataFrames no se pudieron cargar")
         
 except Exception as e:
     print(f"\n❌ Error cargando GeoDataFrames: {e}")
@@ -795,6 +228,7 @@ dashboard_layout = dbc.Container([
     dcc.Store(id='generation-status', storage_type='memory', data={'status': 'idle'}),
     dcc.Store(id='peligro-downloaded', storage_type='memory', data=False),
     dcc.Store(id='elementos-downloaded', storage_type='memory', data=False),
+    dcc.Store(id='ubicacion-locked', storage_type='memory', data=False),
     
     dcc.Interval(id='check-process', interval=2000, disabled=True),
     
@@ -855,6 +289,55 @@ dashboard_layout = dbc.Container([
                     
                     html.Hr(),
                     
+                    # SECCIÓN: UBICACIÓN GEOGRÁFICA
+                    html.Div([
+                        html.Label([
+                            html.I(className="bi bi-geo-alt"),
+                            "Zona de Estudio"
+                        ], style={'marginBottom': '15px'}),
+                        
+                        html.Div([
+                            html.Label([
+                                html.I(className="bi bi-globe"),
+                                "Región / Departamento"
+                            ]),
+                            dcc.Dropdown(
+                                id='departamento-dropdown',
+                                options=LISTA_DEPARTAMENTOS,
+                                placeholder='Seleccione región',
+                                className='mb-3'
+                            )
+                        ]),
+                        
+                        html.Div([
+                            html.Label([
+                                html.I(className="bi bi-pin-map"),
+                                "Provincia"
+                            ]),
+                            dcc.Dropdown(
+                                id='provincia-dropdown',
+                                placeholder='Seleccione provincia',
+                                disabled=True,
+                                className='mb-3'
+                            )
+                        ]),
+                        
+                        html.Div([
+                            html.Label([
+                                html.I(className="bi bi-buildings"),
+                                "Distrito"
+                            ]),
+                            dcc.Dropdown(
+                                id='distrito-dropdown',
+                                placeholder='Seleccione distrito',
+                                disabled=True,
+                                className='mb-4'
+                            )
+                        ])
+                    ]),
+
+                    html.Hr(),
+                    
                     # SECCIÓN: TIPOS DE PELIGRO
                     html.Div([
                         html.Label([
@@ -864,12 +347,12 @@ dashboard_layout = dbc.Container([
                         html.Div(className='tipo-selector', children=[
                             dbc.Button([
                                 html.I(className="bi bi-droplet-fill"),
-                                "Inundación"
-                            ], id='btn-inundacion', className='btn-tipo', n_clicks=0),
+                                "Inundación Pluvial"
+                            ], id='btn-inundacion pluvial', className='btn-tipo', n_clicks=0),
                             
                             dbc.Button([
                                 html.I(className="bi bi-arrow-down-right-circle-fill"),
-                                "Deslizamiento",
+                                "Deslizamiento Pluvial",
                                 html.Span("PRÓXIMAMENTE", className="badge-soon")
                             ], id='btn-deslizamiento', className='btn-tipo', disabled=True, n_clicks=0),
                             
@@ -899,48 +382,7 @@ dashboard_layout = dbc.Container([
                             "Generar Mapa de Elementos Expuestos"
                         ], id='btn-elementos-expuestos', className='btn-tipo', n_clicks=0, disabled=True,
                         style={'width': '100%', 'fontSize': '0.85rem', 'padding': '16px 14px !important'})
-                    ], className='mb-4'),
-                    
-                    html.Hr(),
-                    
-                    html.Div([
-                        html.Label([
-                            html.I(className="bi bi-globe"),
-                            "Región / Departamento"
-                        ]),
-                        dcc.Dropdown(
-                            id='departamento-dropdown',
-                            options=LISTA_DEPARTAMENTOS,
-                            placeholder='Seleccione región',
-                            className='mb-4'
-                        )
-                    ]),
-                    
-                    html.Div([
-                        html.Label([
-                            html.I(className="bi bi-pin-map"),
-                            "Provincia"
-                        ]),
-                        dcc.Dropdown(
-                            id='provincia-dropdown',
-                            placeholder='Seleccione provincia',
-                            disabled=True,
-                            className='mb-4'
-                        )
-                    ]),
-                    
-                    html.Div([
-                        html.Label([
-                            html.I(className="bi bi-buildings"),
-                            "Distrito"
-                        ]),
-                        dcc.Dropdown(
-                            id='distrito-dropdown',
-                            placeholder='Seleccione distrito',
-                            disabled=True,
-                            className='mb-4'
-                        )
-                    ])
+                    ], className='mb-4')
                 ])
             ], className='control-panel')
         ], lg=4, className='mb-4 mb-lg-0'),
@@ -958,7 +400,7 @@ dashboard_layout = dbc.Container([
                                 html.H5("Sistema de Análisis de Riesgo", className="alert-heading text-center"),
                                 html.P("Configure los parámetros y seleccione el tipo de análisis:", className='text-center mb-3', style={'fontSize': '0.95rem', 'color': 'var(--text-secondary)'}),
                                 html.Ul([
-                                    html.Li([html.Strong("Peligros:"), " Inundación, Deslizamiento, Heladas"]),
+                                    html.Li([html.Strong("Peligros:"), " Inundación pluvial, Deslizamiento, Heladas"]),
                                     html.Li([html.Strong("Elementos Expuestos:"), " Agrícola, CP, IE, Vías"])
                                 ], style={'textAlign': 'left', 'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
                             ], color="light", className='border-0 mb-4')
@@ -1065,15 +507,16 @@ def display_user_nav(session_data):
 
 # ==================== CALLBACK PRINCIPAL PARA BOTONES DE TIPO ====================
 @app.callback(
-    [Output('btn-inundacion', 'className'),
+    [Output('btn-inundacion pluvial', 'className'),
      Output('btn-deslizamiento', 'className'),
      Output('btn-heladas', 'className'),
      Output('btn-elementos-expuestos', 'className'),
      Output('btn-elementos-expuestos', 'disabled'),
      Output('selected-tipo-peligro', 'data'),
      Output('selected-elementos-expuestos', 'data'),
-     Output('tipo-locked', 'data')],
-    [Input('btn-inundacion', 'n_clicks'),
+     Output('tipo-locked', 'data'),
+     Output('ubicacion-locked', 'data')],
+    [Input('btn-inundacion pluvial', 'n_clicks'),
      Input('btn-deslizamiento', 'n_clicks'),
      Input('btn-heladas', 'n_clicks'),
      Input('btn-elementos-expuestos', 'n_clicks'),
@@ -1086,51 +529,66 @@ def update_tipo_selection(inun_clicks, desli_clicks, heladas_clicks, elem_clicks
                           peligro_down, elem_down, is_locked):
     from dash import callback_context
     
-    # Estado inicial
     if not callback_context.triggered:
-        return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False)
+        return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False, False)
     
     button_id = callback_context.triggered[0]['prop_id'].split('.')[0]
     
-    # ✅ CASO 1: Click en INUNDACIÓN (TODO VERDE)
-    if button_id == 'btn-inundacion' and not is_locked:
-        print("✅ INUNDACIÓN SELECCIONADA - BOTÓN TODO VERDE")
+    if button_id == 'btn-inundacion pluvial' and not is_locked:
         return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                True, 'inundacion', False, True)
+                True, 'inundacion pluvial', False, True, True)
     
-    # ✅ CASO 2: Peligro descargado - Usuario selecciona elementos expuestos
     if peligro_down and not elem_down:
         if button_id == 'btn-elementos-expuestos':
-            print("✅ ELEMENTOS EXPUESTOS SELECCIONADO - BOTÓN TODO VERDE")
-            print("🔓 HABILITANDO: Botón Generar Mapa y Descargar")
-            # Resetea el botón de descarga para nueva generación
             return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
-                    True, 'inundacion', True, True)
+                    True, 'inundacion', True, True, True)
         else:
-            # Mantener inundación verde, elementos habilitado, generar deshabilitado
             return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                    False, 'inundacion', False, True)
+                    False, 'inundacion pluvial', False, True, True)
     
-    # ✅ CASO 3: TODO descargado - ambos verdes, todo bloqueado
     if peligro_down and elem_down:
-        print("🔒 TODO COMPLETADO - Esperando Nuevo Análisis")
         return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
-                True, 'inundacion', True, True)
+                True, 'inundacion pluvial', True, True, True)
     
-    # Mantener estado locked con botón verde
     if is_locked:
         elementos_disabled = not peligro_down or elem_down
         return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                elementos_disabled, 'inundacion', False, True)
+                elementos_disabled, 'inundacion pluvial', False, True, True)
     
-    # Estado por defecto
-    return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False)
+    return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False, False)
+
+# ==================== BLOQUEAR/DESBLOQUEAR UBICACIÓN ====================
+@app.callback(
+    [Output('departamento-dropdown', 'disabled'),
+     Output('provincia-dropdown', 'disabled', allow_duplicate=True),
+     Output('distrito-dropdown', 'disabled', allow_duplicate=True),
+     Output('ubicacion-locked', 'data', allow_duplicate=True)],
+    [Input('selected-tipo-peligro', 'data'),
+     Input('reset-button', 'n_clicks')],
+    [State('departamento-dropdown', 'value'),
+     State('provincia-dropdown', 'value'),
+     State('distrito-dropdown', 'value')],
+    prevent_initial_call=True
+)
+def lock_unlock_location(tipo_peligro, reset_clicks, depa, prov, dist):
+    from dash import callback_context
+    
+    button_id = callback_context.triggered[0]['prop_id'].split('.')[0]
+    
+    if button_id == 'reset-button':
+        return (False, False, False, False)
+    
+    if tipo_peligro and all([depa, prov, dist]):
+        return (True, True, True, True)
+    
+    return (False, False, False, False)
 
 @app.callback(
     Output('provincia-dropdown', 'options'), 
     Output('provincia-dropdown', 'disabled'), 
     Output('provincia-dropdown', 'value'), 
-    Input('departamento-dropdown', 'value')
+    Input('departamento-dropdown', 'value'),
+    prevent_initial_call=True
 )
 def update_provincias(departamento):
     if departamento: 
@@ -1141,7 +599,8 @@ def update_provincias(departamento):
     Output('distrito-dropdown', 'options'), 
     Output('distrito-dropdown', 'disabled'), 
     Output('distrito-dropdown', 'value'), 
-    Input('provincia-dropdown', 'value')
+    Input('provincia-dropdown', 'value'),
+    prevent_initial_call=True
 )
 def update_distritos(provincia):
     if provincia: 
@@ -1164,40 +623,26 @@ def update_distritos(provincia):
     prevent_initial_call=True
 )
 def enable_generate(user, depa, prov, dist, tipo_peligro, elem_exp, loading, peligro_down, elem_down, gen_status):
-    # Bloqueado si está procesando
     if loading:
-        print("🔒 Procesando - Botón DESHABILITADO")
         return True
     
-    # ✅ CAMBIO: Si terminó de procesar (status completed) → Deshabilitar hasta que descargue
     if gen_status and gen_status.get('status') == 'completed':
-        print("🔒 Procesamiento completado - Esperando descarga")
         return True
     
-    # Bloqueado si ya descargó elementos expuestos
     if elem_down:
-        print("🔒 Todo completo - Botón DESHABILITADO")
         return True
     
-    # Bloqueado si descargó peligro pero NO seleccionó elementos
     if peligro_down and not elem_exp:
-        print("🔒 Esperando selección de Elementos Expuestos")
         return True
     
-    # Formulario completo
     form_complete = all([user, depa, prov, dist])
     
-    # Caso: Generando elementos expuestos
     if peligro_down and elem_exp and form_complete:
-        print("🔓 Listo para generar ELEMENTOS EXPUESTOS")
         return False
     
-    # Caso: Primera generación (peligro)
     if tipo_peligro and form_complete and not peligro_down:
-        print("🔓 Listo para generar PELIGRO")
         return False
     
-    print("🔒 Faltan datos - Botón DESHABILITADO")
     return True
 
 # ==================== RESUMEN ====================
@@ -1225,7 +670,7 @@ def update_summary(user, depa, prov, dist, tipo_peligro, elem_exp):
             html.Span([html.Strong("Análisis:"), " Elementos Expuestos"])
         ]))
     elif tipo_peligro:
-        peligro_map = {'inundacion': ('Inundación', 'bi-droplet-fill')}
+        peligro_map = {'inundacion pluvial': ('Inundación', 'bi-droplet-fill')}
         nombre, icono = peligro_map.get(tipo_peligro, ('Inundación', 'bi-droplet-fill'))
         items.append(html.Div(className='summary-item', children=[
             html.I(className=f"bi {icono}"),
@@ -1455,20 +900,12 @@ def check_process(n_intervals, process_id):
         
         threading.Thread(target=cleanup, daemon=True).start()
         
-        # ✅ CORRECCIÓN CRÍTICA: Botón Descargar SIN check, habilitado para que el usuario haga click
-        print(f"\n{'='*60}")
-        print(f"✅ PROCESAMIENTO COMPLETADO: {map_type.upper()}".center(60))
-        print(f"{'='*60}")
-        print("🔒 Bloqueando: Botón Generar Mapa")
-        print("🔓 HABILITANDO: Botón Descargar (SIN check, clickeable) ✅")
-        print(f"{'='*60}\n")
-        
         return (success, filepath, False,
                 [html.I(className="bi bi-lightning-fill me-2"), 'Generar Mapa'],
                 True, {'status': 'completed', 'filepath': filepath, 'map_type': map_type},
                 True, False,
-                [html.I(className="bi bi-download me-2"), 'Descargar'],  # ✅ SIN check
-                'w-100 mb-3 btn-info')  # ✅ Botón normal (clickeable)
+                [html.I(className="bi bi-download me-2"), 'Descargar'],
+                'w-100 mb-3 btn-info')
     
     elif current_status == 'error':
         error_msg = status.get('error', 'Error desconocido')
@@ -1504,75 +941,113 @@ def check_process(n_intervals, process_id):
 # ==================== DESCARGAR Y ACTUALIZAR FLUJO ====================
 @app.callback(
     [Output('download-map-image', 'data'),
-     Output('download-button', 'children'),
-     Output('download-button', 'className'),
+     Output('download-button', 'children', allow_duplicate=True),
+     Output('download-button', 'className', allow_duplicate=True),
      Output('download-button', 'disabled', allow_duplicate=True),
      Output('peligro-downloaded', 'data'),
      Output('elementos-downloaded', 'data'),
      Output('reset-button', 'disabled'),
      Output('btn-elementos-expuestos', 'disabled', allow_duplicate=True),
      Output('generate-map-button', 'disabled', allow_duplicate=True),
-     Output('generation-status', 'data', allow_duplicate=True)],
+     Output('generation-status', 'data', allow_duplicate=True),
+     Output('map-container', 'children', allow_duplicate=True)],
     Input('download-button', 'n_clicks'),
     [State('map-filepath-store', 'data'),
      State('generation-status', 'data'),
      State('peligro-downloaded', 'data'),
      State('elementos-downloaded', 'data')],
-    prevent_initial_call=True
+    prevent_initial_call=True,
+    allow_duplicate=True
 )
 def download_file(n_clicks, filepath, gen_status, peligro_down, elem_down):
-    if not n_clicks or not filepath or not os.path.exists(filepath):
+    from dash import callback_context
+    
+    if not n_clicks:
         return (None, [html.I(className="bi bi-download me-2"), 'Descargar'],
-                'w-100 mb-3 btn-info', True, peligro_down, elem_down, True, True, True,
-                gen_status)
+                'w-100 mb-3 btn-info', False, peligro_down, elem_down, True, True, True,
+                gen_status, dbc.Alert("Error: Sin clicks", color="danger"))
+    
+    if not filepath:
+        return (None, [html.I(className="bi bi-download me-2"), 'Descargar'],
+                'w-100 mb-3 btn-info', False, peligro_down, elem_down, True, True, True,
+                gen_status, dbc.Alert("Error: No hay archivo para descargar", color="danger"))
+    
+    if not os.path.exists(filepath):
+        return (None, [html.I(className="bi bi-download me-2"), 'Descargar'],
+                'w-100 mb-3 btn-info', False, peligro_down, elem_down, True, True, True,
+                gen_status, dbc.Alert(f"Error: Archivo no existe: {filepath}", color="danger"))
+    
+    downloading = dbc.Alert([
+        html.Div([
+            html.I(className="bi bi-download spin", 
+                  style={'fontSize': '3rem', 'color': 'var(--accent)', 'marginBottom': '15px'})
+        ], className='text-center'),
+        html.H5("📥 Descargando Archivo...", className="alert-heading text-center"),
+        html.Hr(style={'opacity': '0.5'}),
+        html.Div([
+            html.Div(className='summary-item', children=[
+                html.I(className="bi bi-file-earmark-image"),
+                html.Span([html.Strong("Archivo:"), html.Code(os.path.basename(filepath), 
+                          style={'fontSize': '0.85em', 'background': 'rgba(15, 52, 96, 0.8)', 
+                                 'padding': '4px 8px', 'borderRadius': '6px'})])
+            ]),
+            html.Div(className='summary-item', children=[
+                html.I(className="bi bi-hdd"),
+                html.Span([html.Strong("Tamaño:"), f" {os.path.getsize(filepath) / (1024*1024):.2f} MB"])
+            ])
+        ], className='mt-3'),
+        html.P("El archivo se está descargando a tu dispositivo...", 
+               className='text-center mt-3', style={'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
+    ], color="info", className='border-0')
     
     try:
-        print(f"\n{'='*60}")
-        print("📥 DESCARGA INICIADA".center(60))
-        print(f"{'='*60}")
-        print(f"📁 Archivo: {filepath}")
-        
         map_type = gen_status.get('map_type', 'peligro') if gen_status else 'peligro'
-        print(f"📊 Tipo: {map_type.upper()}")
+        
+        success_msg = dbc.Alert([
+            html.Div([
+                html.I(className="bi bi-check-circle-fill success-icon")
+            ], className='text-center mb-3'),
+            html.H5("✅ ¡Descarga Completada!", className="alert-heading text-center"),
+            html.Hr(style={'opacity': '0.5'}),
+            html.Div([
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-file-earmark-image"),
+                    html.Span([html.Strong("Archivo:"), html.Code(os.path.basename(filepath), 
+                              style={'fontSize': '0.85em', 'background': 'rgba(15, 52, 96, 0.8)', 
+                                     'padding': '4px 8px', 'borderRadius': '6px'})])
+                ]),
+                html.Div(className='summary-item', children=[
+                    html.I(className="bi bi-check-lg"),
+                    html.Span([html.Strong("Estado:"), " ✅ Descargado correctamente"])
+                ])
+            ], className='mt-3')
+        ], color="success", className='border-0')
         
         if map_type == 'peligro':
-            print(f"\n{'='*60}")
-            print("✅ MAPA DE PELIGRO DESCARGADO".center(60))
-            print(f"{'='*60}")
-            print("🔓 HABILITANDO: Botón Elementos Expuestos")
-            print("🔒 Deshabilitando: Botón Descargar (ya descargado)")
-            print("🔒 Manteniendo: Botón Generar deshabilitado")
-            print("⏳ Esperando: Selección de Elementos Expuestos")
-            print(f"{'='*60}\n")
-            
-            # ✅ Descarga peligro: deshabilita descarga, habilita elementos
             return (dcc.send_file(filepath),
                     [html.I(className="bi bi-check-circle me-2"), 'Descargado ✓'],
                     'w-100 mb-3 btn-downloaded', True,
                     True, False, True, False, True,
-                    {'status': 'idle'})
+                    {'status': 'idle'}, success_msg)
         else:
-            print(f"\n{'='*60}")
-            print("✅ MAPA DE ELEMENTOS EXPUESTOS DESCARGADO".center(60))
-            print(f"{'='*60}")
-            print("🔓 HABILITANDO: Botón Nuevo Análisis")
-            print("🔒 Deshabilitando: Botón Descargar (ya descargado)")
-            print("🔒 Bloqueando: Botón Generar")
-            print("🔒 Bloqueando: Botón Elementos Expuestos")
-            print("✨ Flujo completado - Usuario puede reiniciar")
-            print(f"{'='*60}\n")
-            
-            # ✅ Descarga elementos: marca todo completado, habilita reset
             return (dcc.send_file(filepath),
                     [html.I(className="bi bi-check-circle me-2"), 'Descargado ✓'],
                     'w-100 mb-3 btn-downloaded', True,
                     True, True, False, True, True,
-                    {'status': 'idle'})
+                    {'status': 'idle'}, success_msg)
     except Exception as e:
-        print(f"\n❌ ERROR EN DESCARGA: {e}\n")
+        error_alert = dbc.Alert([
+            html.Div([
+                html.I(className="bi bi-x-octagon-fill", 
+                       style={'fontSize': '2rem', 'color': '#c0392b', 'marginBottom': '10px'})
+            ], className='text-center'),
+            html.H5("Error en la Descarga", className="alert-heading text-center"),
+            html.Hr(style={'opacity': '0.5'}),
+            html.P(f"Detalle: {str(e)}", style={'fontSize': '0.9rem'})
+        ], color="danger", className='border-0')
         return (None, [html.I(className="bi bi-download me-2"), 'Descargar'],
                 'w-100 mb-3 btn-info', False, peligro_down, elem_down, True, True, False,
-                gen_status)
+                gen_status, error_alert)
 
 # ==================== RESETEAR TODO ====================
 @app.callback(
@@ -1588,17 +1063,12 @@ def download_file(n_clicks, filepath, gen_status, peligro_down, elem_down):
      Output('selected-tipo-peligro', 'data', allow_duplicate=True),
      Output('selected-elementos-expuestos', 'data', allow_duplicate=True),
      Output('map-filepath-store', 'data', allow_duplicate=True),
-     Output('generation-status', 'data', allow_duplicate=True)],
+     Output('generation-status', 'data', allow_duplicate=True),
+     Output('ubicacion-locked', 'data', allow_duplicate=True)],
     Input('reset-button', 'n_clicks'),
     prevent_initial_call=True
 )
 def reset_all(n_clicks):
-    print("\n🔄 REINICIANDO TODO EL SISTEMA...")
-    print("   🔓 Habilitando botones de peligro")
-    print("   🔒 Bloqueando botón elementos expuestos")
-    print("   🔄 Limpiando formularios")
-    print("   🗑️  Limpiando estados\n")
-    
     initial_message = dbc.Alert([
         html.Div([
             html.I(className="bi bi-map spin", style={'fontSize': '3rem', 'color': 'var(--accent)', 'marginBottom': '15px'})
@@ -1607,7 +1077,7 @@ def reset_all(n_clicks):
         html.P("Configure los parámetros y seleccione el tipo de análisis:", className='text-center mb-3', 
                style={'fontSize': '0.95rem', 'color': 'var(--text-secondary)'}),
         html.Ul([
-            html.Li([html.Strong("Peligros:"), " Inundación, Deslizamiento, Heladas"]),
+            html.Li([html.Strong("Peligros:"), " Inundación pluvial, Deslizamiento, Heladas"]),
             html.Li([html.Strong("Elementos Expuestos:"), " Agrícola, CP, IE, Vías"])
         ], style={'textAlign': 'left', 'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
     ], color="light", className='border-0 mb-4')
@@ -1615,54 +1085,15 @@ def reset_all(n_clicks):
     return (None, None, False, False,
             [html.I(className="bi bi-download me-2"), 'Descargar'],
             'w-100 mb-3 btn-info', True, initial_message,
-            False, None, False, None, {'status': 'idle'})
+            False, None, False, None, {'status': 'idle'}, False)
 
 if __name__ == '__main__':
     print(f"\n{'='*80}")
-    print("🚀 DASHBOARD DE COMPRENSIÓN DE RIESGO - VERSIÓN FINAL CORREGIDA".center(80))
+    print("🚀 DASHBOARD DE COMPRENSIÓN DE RIESGO - VERSIÓN REFACTORIZADA".center(80))
     print(f"{'='*80}")
-    
-    print("\n✨ CORRECCIONES IMPLEMENTADAS:")
-    print("   ✅ Botones de peligro TODO VERDE cuando se seleccionan")
-    print("   ✅ Botón elementos expuestos TODO VERDE cuando se selecciona")
-    print("   ✅ Procesamiento termina → SOLO se habilita Descargar")
-    print("   ✅ Después de descargar peligro → Se habilita Elementos Expuestos")
-    print("   ✅ Seleccionar Elementos → Se vuelven a habilitar Generar y Descargar")
-    print("   ✅ Flujo bloqueado correctamente en cada paso")
-    
-    print("\n📋 FLUJO DE TRABAJO COMPLETO:")
-    print("   1️⃣  Seleccionar Tipo de Peligro → Botón TODO VERDE ✓")
-    print("   2️⃣  Completar formulario → Habilita Generar Mapa")
-    print("   3️⃣  Click Generar → Procesando Peligro... (ambos botones bloqueados)")
-    print("   4️⃣  Procesamiento termina → SOLO Descargar habilitado ✅")
-    print("   5️⃣  Click Descargar Peligro → Botón 'Descargado ✓' (bloqueado)")
-    print("   6️⃣  SE HABILITA botón Elementos Expuestos 🔓")
-    print("   7️⃣  Seleccionar Elementos Expuestos → Botón TODO VERDE ✓")
-    print("   8️⃣  SE HABILITAN Generar y Descargar (vuelven normales)")
-    print("   9️⃣  Click Generar → Procesando Elementos... (ambos bloqueados)")
-    print("   🔟 Procesamiento termina → SOLO Descargar habilitado ✅")
-    print("   1️⃣1️⃣ Click Descargar Elementos → Botón 'Descargado ✓' (bloqueado)")
-    print("   1️⃣2️⃣ SE HABILITA 'Nuevo Análisis' 🔓")
-    print("   🔄 Click 'Nuevo Análisis' → Reinicia TODO desde cero")
-    
-    print("\n🎨 ESTADOS DE BOTONES:")
-    print("   🟢 VERDE con ✓ = Tipo seleccionado y activo")
-    print("   ⚪ Normal = Disponible para selección")
-    print("   🔒 Gris = Bloqueado (no disponible aún)")
-    print("   🔄 Spinner = Procesando en segundo plano")
-    print("   ✅ Descargado = Descarga completada exitosamente")
-    
-    print(f"\n{'='*80}")
-    print("⚙️  CONFIGURACIÓN DEL SERVIDOR:")
-    print("   • Request timeout: 600 segundos (10 minutos)")
-    print("   • Procesamiento en segundo plano: ✅ Habilitado")
-    print("   • Threading: ✅ Habilitado para múltiples usuarios")
-    print("   • Puerto: 8053")
-    print("   • URL: http://127.0.0.1:8053")
-    print(f"{'='*80}\n")
     
     from werkzeug.serving import WSGIRequestHandler
     WSGIRequestHandler.timeout = 600
     app.server.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
     
-    app.run(debug=True, port=8053, threaded=True)
+    app.run(debug=False, port=8052, threaded=True)

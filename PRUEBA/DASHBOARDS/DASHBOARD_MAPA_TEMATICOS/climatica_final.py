@@ -45,7 +45,7 @@ def generar_paleta_climatica(num_categorias):
 def cargar_clasificacion_climatica():
     """Carga el shapefile de clasificación climática"""
     # Primero intentar ruta directa
-    ruta_directa = f"{ruta_base}/DATA/CLASIFICACION CLIMATICA/clasif_climática.shp"
+    ruta_directa = f"{ruta_base}/DATA/CLASIFICACION_CLIMATICA/clasif_climática.shp"
     
     if os.path.exists(ruta_directa):
         try:

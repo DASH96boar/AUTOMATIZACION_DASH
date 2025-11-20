@@ -53,6 +53,70 @@ except FileNotFoundError:
 # ==================== USUARIOS VÁLIDOS ====================
 VALID_USERS = {'admin': 'admin', 'usuario': 'admin'}
 
+# ==================== ESTADOS DEL CHAT GUÍA ====================
+CHAT_STATES = {
+    'inicio': {
+        'mensaje': '¡Hola! 👋 Soy tu asistente virtual. Te guiaré paso a paso en el análisis de riesgo.',
+        'accion': '📝 Comencemos ingresando tu nombre completo como responsable del análisis.',
+        'icono': 'bi-chat-dots'
+    },
+    'esperando_nombre': {
+        'mensaje': '✅ Perfecto! Ahora seleccionemos la ubicación geográfica.',
+        'accion': '🌎 Selecciona el DEPARTAMENTO/REGIÓN donde realizarás el análisis.',
+        'icono': 'bi-geo-alt'
+    },
+    'esperando_provincia': {
+        'mensaje': '👍 Región seleccionada correctamente.',
+        'accion': '📍 Ahora selecciona la PROVINCIA específica.',
+        'icono': 'bi-pin-map'
+    },
+    'esperando_distrito': {
+        'mensaje': '✅ Provincia registrada.',
+        'accion': '🏘️ Finalmente, selecciona el DISTRITO.',
+        'icono': 'bi-buildings'
+    },
+    'ubicacion_completa': {
+        'mensaje': '🎯 ¡Ubicación completa!',
+        'accion': '⚠️ Ahora selecciona el TIPO DE PELIGRO que deseas analizar (Inundación Pluvial disponible).',
+        'icono': 'bi-exclamation-triangle'
+    },
+    'tipo_seleccionado': {
+        'mensaje': '✅ Tipo de peligro seleccionado.',
+        'accion': '🚀 Todo listo! Presiona "GENERAR MAPA" para iniciar el análisis.',
+        'icono': 'bi-lightning'
+    },
+    'generando_peligro': {
+        'mensaje': '⚙️ Generando Mapa de Peligro...',
+        'accion': '🔄 Proceso interno:\n• Cargando capas geográficas\n• Procesando modelo de peligro\n• Aplicando algoritmos de zonificación\n• Renderizando mapa final',
+        'icono': 'bi-gear-fill spin'
+    },
+    'peligro_completado': {
+        'mensaje': '✅ ¡Mapa de Peligro generado exitosamente!',
+        'accion': '💾 Descarga tu mapa. Luego podrás generar el mapa de Elementos Expuestos.',
+        'icono': 'bi-check-circle'
+    },
+    'peligro_descargado': {
+        'mensaje': '📥 Mapa de Peligro descargado.',
+        'accion': '🗺️ Opcional: Genera el mapa de ELEMENTOS EXPUESTOS para análisis completo.',
+        'icono': 'bi-layers'
+    },
+    'generando_elementos': {
+        'mensaje': '⚙️ Generando Mapa de Elementos Expuestos...',
+        'accion': '🔄 Proceso interno:\n• Identificando infraestructura crítica\n• Geolocalizando centros poblados\n• Mapeando instituciones educativas\n• Trazando redes viales\n• Integrando capas temáticas',
+        'icono': 'bi-gear-fill spin'
+    },
+    'elementos_completado': {
+        'mensaje': '✅ ¡Mapa de Elementos Expuestos generado!',
+        'accion': '💾 Descarga tu mapa. Luego podrás iniciar un nuevo análisis.',
+        'icono': 'bi-check-circle'
+    },
+    'todo_completado': {
+        'mensaje': '🎉 ¡Análisis completo finalizado!',
+        'accion': '🔄 Usa "NUEVO ANÁLISIS" para comenzar otra evaluación de riesgo.',
+        'icono': 'bi-trophy'
+    }
+}
+
 def leer_sql(ruta):
     if not os.path.exists(ruta):
         print(f"⚠️ ADVERTENCIA: La ruta del archivo SQL no existe: '{ruta}'")
@@ -229,9 +293,55 @@ dashboard_layout = dbc.Container([
     dcc.Store(id='peligro-downloaded', storage_type='memory', data=False),
     dcc.Store(id='elementos-downloaded', storage_type='memory', data=False),
     dcc.Store(id='ubicacion-locked', storage_type='memory', data=False),
+
+    dcc.Store(id='chat-state', storage_type='memory', data='inicio'),
+    dcc.Store(id='chat-visible', storage_type='memory', data=True),
     
     dcc.Interval(id='check-process', interval=2000, disabled=True),
-    
+
+    # ==================== CHAT FLOTANTE ====================
+    html.Div([
+        # Botón minimizar/expandir
+        html.Div([
+            dbc.Button(
+                html.I(id='chat-toggle-icon', className="bi bi-chevron-down"),
+                id='chat-toggle',
+                className='chat-toggle-btn',
+                n_clicks=0
+            )
+        ], className='chat-toggle-container'),
+        
+        # Contenedor del chat
+        html.Div([
+            # Header del chat
+            html.Div([
+                html.Div([
+                    html.I(className="bi bi-robot me-2"),
+                    html.Strong("Asistente Virtual")
+                ], className='chat-header-title'),
+                html.Div([
+                    html.I(id='chat-status-icon', className="bi bi-chat-dots"),
+                ], className='chat-status')
+            ], className='chat-header'),
+            
+            # Cuerpo del chat con mensajes
+            html.Div([
+                html.Div([
+                    html.I(id='chat-main-icon', className="bi bi-chat-dots chat-icon"),
+                    html.Div([
+                        html.P(id='chat-mensaje', className='chat-message'),
+                        html.Div([
+                            html.I(className="bi bi-arrow-right-circle me-2"),
+                            html.Span(id='chat-accion', className='chat-action')
+                        ], className='chat-action-box')
+                    ], className='chat-text')
+                ], className='chat-content')
+            ], className='chat-body', id='chat-body')
+        ], id='chat-container', className='chat-assistant')
+    ], className='chat-wrapper'),
+
+
+
     html.Div([
         html.A([
             html.I(className="bi bi-globe2 me-2"),
@@ -458,6 +568,77 @@ app.layout = html.Div([
 ])
 
 # ==================== CALLBACKS ====================
+# ==================== ACTUALIZAR ESTADO DEL CHAT ====================
+@app.callback(
+    [Output('chat-state', 'data'),
+     Output('chat-mensaje', 'children'),
+     Output('chat-accion', 'children'),
+     Output('chat-main-icon', 'className'),
+     Output('chat-status-icon', 'className')],
+    [Input('user-name-input', 'value'),
+     Input('departamento-dropdown', 'value'),
+     Input('provincia-dropdown', 'value'),
+     Input('distrito-dropdown', 'value'),
+     Input('selected-tipo-peligro', 'data'),
+     Input('generation-status', 'data'),
+     Input('peligro-downloaded', 'data'),
+     Input('elementos-downloaded', 'data'),
+     Input('selected-elementos-expuestos', 'data')],
+    State('chat-state', 'data')
+)
+def update_chat_state(user, depa, prov, dist, tipo_peligro, gen_status, 
+                      peligro_down, elem_down, elem_exp_selected, current_state):
+    
+    # Determinar el nuevo estado
+    if elem_down and peligro_down:
+        new_state = 'todo_completado'
+    elif elem_down and not peligro_down:
+        new_state = 'elementos_completado'
+    elif gen_status and gen_status.get('status') == 'processing':
+        map_type = gen_status.get('map_type', 'peligro')
+        new_state = 'generando_elementos' if map_type == 'elementos' else 'generando_peligro'
+    elif gen_status and gen_status.get('status') == 'completed' and not peligro_down:
+        map_type = gen_status.get('map_type', 'peligro')
+        if map_type == 'elementos':
+            new_state = 'elementos_completado'
+        else:
+            new_state = 'peligro_completado'
+    elif peligro_down and elem_exp_selected:
+        new_state = 'generando_elementos'
+    elif peligro_down:
+        new_state = 'peligro_descargado'
+    elif tipo_peligro and all([user, depa, prov, dist]):
+        new_state = 'tipo_seleccionado'
+    elif all([user, depa, prov, dist]):
+        new_state = 'ubicacion_completa'
+    elif dist:
+        new_state = 'ubicacion_completa'
+    elif prov:
+        new_state = 'esperando_distrito'
+    elif depa:
+        new_state = 'esperando_provincia'
+    elif user:
+        new_state = 'esperando_nombre'
+    else:
+        new_state = 'inicio'
+    
+    # Obtener información del estado
+    state_info = CHAT_STATES.get(new_state, CHAT_STATES['inicio'])
+    
+    # Formatear acción con saltos de línea
+    accion_formatted = state_info['accion'].split('\n')
+    accion_html = []
+    for line in accion_formatted:
+        if line.strip():
+            accion_html.append(html.Div(line))
+    
+    return (
+        new_state,
+        state_info['mensaje'],
+        accion_html if accion_html else state_info['accion'],
+        f"bi {state_info['icono']} chat-icon",
+        f"bi {state_info['icono']}"
+    )
 
 @app.callback(
     Output('page-content', 'children'), 

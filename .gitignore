@@ -16,17 +16,24 @@ build/
 *.swp
 *.swo
 
-# Datos grandes
-*.tif
-*.tiff
-*.shp
-*.shx
-*.dbf
-*.prj
-*.cpg
-*.geojson
-datos/
-DATA/
+# Logs
+*.log
+logs/
+
+# Usuarios generados
+USUARIOS/
+usuarios/
+
+# Ambiente
+.env
+.env.local
+secrets.json
+
+# OS
+.DS_Store
+Thumbs.db
+EOF
+
 
 # Usuarios generados
 USUARIOS/

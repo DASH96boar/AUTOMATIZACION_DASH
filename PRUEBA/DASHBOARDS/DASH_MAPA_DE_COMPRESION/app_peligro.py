@@ -673,7 +673,7 @@ ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 try:
     ruta_shp_distritos = f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS DEL PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
     ruta_shp_provincias = f"{ruta_base}/DATA/MAPA DE UBICACION/PROVINCIAS DEL PERU/PROVINCIAS_inei_geogpsperu_suyopomalia.shp"
-    ruta_shp_departamentos = f"{ruta_base}/DATA/MAPA DE UBICACION/DEPARTAMENTOS DEL PERU/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp"
+    ruta_shp_departamentos = f"{ruta_base}/DATA/MAPA DE UBICACION/DEPARTAMENTOS_DEL_PERU/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp"
     
     if os.path.exists(ruta_shp_distritos):
         gdf_distritos = gpd.read_file(ruta_shp_distritos)

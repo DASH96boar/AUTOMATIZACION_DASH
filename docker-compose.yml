@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  dashboard:
+    image: ghcr.io/${GITHUB_REPOSITORY}/dashboard:latest
+    container_name: dashboard
+    restart: always
+    ports:
+      - "8051:8051"
+    volumes:
+      - /data/shapefiles:/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA
+      - /data/usuarios:/workspaces/AUTOMATIZACION_DASH/PRUEBA/USUARIOS
+      - ./logs:/app/logs
+    environment:
+      - PYTHONUNBUFFERED=1
+    networks:
+      - dashboard-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8051/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  nginx:
+    image: nginx:alpine
+    container_name: nginx-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./config/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - dashboard
+    networks:
+      - dashboard-network
+
+networks:
+  dashboard-network:
+    driver: bridge

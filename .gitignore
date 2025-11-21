@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Datos grandes
+*.tif
+*.tiff
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.geojson
+datos/
+DATA/
+
+# Usuarios generados
+USUARIOS/
+usuarios/
+
+# Logs
+*.log
+logs/
+
+# Ambiente
+.env
+.env.local
+secrets.json
+
+# OS
+.DS_Store
+Thumbs.db

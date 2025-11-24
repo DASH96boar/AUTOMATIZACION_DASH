@@ -20,28 +20,13 @@ build/
 *.log
 logs/
 
-# Usuarios generados
-USUARIOS/
-usuarios/
+# ⚠️ IMPORTANTE: Ignorar archivos generados, NO la carpeta
+# Los usuarios generados van aquí, pero queremos que la carpeta exista
+USUARIOS/**/*
+!USUARIOS/.gitkeep
 
-# Ambiente
-.env
-.env.local
-secrets.json
-
-# OS
-.DS_Store
-Thumbs.db
-EOF
-
-
-# Usuarios generados
-USUARIOS/
-usuarios/
-
-# Logs
-*.log
-logs/
+usuarios/**/*
+!usuarios/.gitkeep
 
 # Ambiente
 .env

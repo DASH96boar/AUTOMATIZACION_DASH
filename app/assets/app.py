@@ -1,13 +1,9 @@
-# Archivo: app.py - VERSIÓN COMPLETA CON FILTRADO POR USUARIO Y SIN DESCARGAS DUPLICADAS
+# Archivo: app.py - VERSIÓN CON INDICADOR DE CARGA VISUAL
 
-from dash import Dash, html, dcc, Input, Output, State, ALL, ctx, callback
+from dash import Dash, html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
 import re
 import os
-import uuid
-from datetime import datetime
-from threading import Thread
-import queue
 
 # Importamos la lógica de los diferentes tipos de mapas
 from geografica_final import generar_mapa_final
@@ -17,87 +13,6 @@ from poblacion_final import generar_mapa_poblacion
 from vias_final import generar_mapa_vias
 from pendientes_final import generar_mapa_pendientes
 from geologia_final import generar_mapa_geologia
-
-# ==================== SISTEMA DE COLA DE PROCESAMIENTO ====================
-class MapGenerationQueue:
-    """Gestiona la cola de generación de mapas con procesamiento en segundo plano"""
-    def __init__(self, max_workers=3):
-        self.queue = queue.Queue()
-        self.tasks = {}  # {task_id: {'status': 'pending'|'processing'|'completed'|'error', ...}}
-        self.max_workers = max_workers
-        self.workers_active = 0
-        
-    def add_task(self, user_name, map_type, departamento, provincia, distrito):
-        task_id = str(uuid.uuid4())[:8]
-        self.tasks[task_id] = {
-            'status': 'pending',
-            'user_name': user_name,
-            'map_type': map_type,
-            'departamento': departamento,
-            'provincia': provincia,
-            'distrito': distrito,
-            'created_at': datetime.now(),
-            'filepath': None,
-            'error': None
-        }
-        self.queue.put(task_id)
-        return task_id
-    
-    def get_task_status(self, task_id):
-        return self.tasks.get(task_id, {'status': 'not_found'})
-    
-    def process_task(self, task_id):
-        """Procesa un mapa en segundo plano"""
-        try:
-            task = self.tasks[task_id]
-            task['status'] = 'processing'
-            task['started_at'] = datetime.now()
-            
-            user_name = task['user_name']
-            map_type = task['map_type']
-            departamento = task['departamento']
-            provincia = task['provincia']
-            distrito = task['distrito']
-            
-            print(f"⏱️ [{task_id}] Procesando mapa: {distrito} ({map_type}) para {user_name}")
-            
-            ruta_guardado = None
-            
-            if map_type == 'geografico':
-                ruta_guardado = generar_mapa_final(user_name, departamento, provincia, distrito)
-            elif map_type == 'geomorfologia':
-                ruta_guardado = generar_mapa_geomorfologia(user_name, departamento, provincia, distrito)
-            elif map_type == 'climatica':
-                ruta_guardado = generar_mapa_climatica(user_name, departamento, provincia, distrito)
-            elif map_type == 'pendientes':
-                ruta_pendientes = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PENDIENTES/pendientes.tif"
-                if not os.path.exists(ruta_pendientes):
-                    raise FileNotFoundError(f"Archivo de pendientes no encontrado: {ruta_pendientes}")
-                ruta_guardado = generar_mapa_pendientes(user_name, departamento, provincia, distrito)
-            elif map_type == 'vias':
-                ruta_guardado = generar_mapa_vias(user_name, departamento, provincia, distrito)
-            elif map_type == 'centros':
-                ruta_guardado = generar_mapa_poblacion(user_name, departamento, provincia, distrito)
-            elif map_type == 'geologia':
-                ruta_guardado = generar_mapa_geologia(user_name, departamento, provincia, distrito)
-            
-            if ruta_guardado and os.path.exists(ruta_guardado):
-                task['status'] = 'completed'
-                task['filepath'] = ruta_guardado
-                task['file_size_mb'] = os.path.getsize(ruta_guardado) / (1024 * 1024)
-                print(f"✅ [{task_id}] Mapa completado para {user_name}: {os.path.basename(ruta_guardado)}")
-            else:
-                raise Exception("No se generó archivo")
-                
-        except Exception as e:
-            task['status'] = 'error'
-            task['error'] = str(e)
-            print(f"❌ [{task_id}] Error para {user_name}: {str(e)}")
-        
-        finally:
-            task['completed_at'] = datetime.now()
-
-map_queue = MapGenerationQueue(max_workers=3)
 
 # ==================== CONFIGURACIÓN DE LA APP ====================
 app = Dash(
@@ -224,6 +139,31 @@ app.index_string = '''
                 box-shadow: 0 2px 10px rgba(144, 164, 174, 0.3) !important;
             }
             
+            /* Botón Descargar Recursos - Verde Medio */
+            .btn-recursos {
+                background: linear-gradient(135deg, #689F38 0%, #558B2F 100%) !important;
+                border: none !important;
+                border-radius: 12px !important;
+                padding: 14px 28px !important;
+                font-weight: 700 !important;
+                transition: all 0.3s ease;
+                box-shadow: 0 4px 20px rgba(104, 159, 56, 0.4) !important;
+                color: white !important;
+            }
+            
+            .btn-recursos:hover:not(:disabled) {
+                background: linear-gradient(135deg, #558B2F 0%, #33691E 100%) !important;
+                transform: translateY(-3px);
+                box-shadow: 0 6px 30px rgba(104, 159, 56, 0.5) !important;
+            }
+            
+            .btn-recursos:disabled {
+                background: linear-gradient(135deg, #B0BEC5 0%, #90A4AE 100%) !important;
+                opacity: 0.7;
+                cursor: wait !important;
+                box-shadow: 0 2px 10px rgba(144, 164, 174, 0.3) !important;
+            }
+            
             /* Botón Logout */
             .btn-danger {
                 background: linear-gradient(135deg, #EF5350 0%, #E53935 100%) !important;
@@ -290,6 +230,14 @@ app.index_string = '''
                 margin: 24px 0 !important;
             }
             
+            /* Resumen de selección */
+            .selection-summary {
+                background: linear-gradient(135deg, #F1F8E9 0%, #DCEDC8 100%);
+                padding: 20px;
+                border-radius: 12px;
+                border-left: 5px solid #7CB342;
+            }
+            
             /* Login container */
             .login-container {
                 backdrop-filter: blur(10px);
@@ -315,6 +263,23 @@ app.index_string = '''
                 animation-duration: 1.5s;
             }
             
+            /* Animación de rotación 3D para el icono de reloj */
+            @keyframes hourglassSpin {
+                0% { transform: rotateZ(0deg); }
+                50% { transform: rotateZ(180deg); }
+                100% { transform: rotateZ(360deg); }
+            }
+            
+            .hourglass-spin {
+                display: inline-block;
+                animation: hourglassSpin 2s linear infinite;
+                transform-style: preserve-3d;
+            }
+            
+            .hourglass-spin:hover {
+                animation-duration: 1s;
+            }
+            
             /* Animación de pulso para botones en carga */
             @keyframes pulse-loading {
                 0%, 100% { 
@@ -333,8 +298,17 @@ app.index_string = '''
                 to { opacity: 1; transform: translateY(0); }
             }
             
+            @keyframes pulse {
+                0%, 100% { transform: scale(1); }
+                50% { transform: scale(1.05); }
+            }
+            
             .animated {
                 animation: fadeIn 0.7s ease-out;
+            }
+            
+            .pulse-animation {
+                animation: pulse 2s infinite;
             }
             
             /* Scrollbar personalizado verde */
@@ -353,6 +327,11 @@ app.index_string = '''
             
             ::-webkit-scrollbar-thumb:hover {
                 background: linear-gradient(135deg, #7CB342 0%, #33691E 100%);
+            }
+            
+            /* Icono de éxito verde */
+            .success-icon {
+                color: #7CB342;
             }
             
             /* Panel de control header */
@@ -412,36 +391,13 @@ app.index_string = '''
                 margin-right: 6px;
             }
             
-            /* Tarjetas de tareas */
-            .task-card {
-                background: rgba(240, 250, 235, 0.6);
-                border: 2px solid #8BC34A;
+            /* Sección de descarga */
+            .download-section {
+                background: linear-gradient(135deg, #F1F8E9 0%, #DCEDC8 100%);
+                padding: 20px;
                 border-radius: 12px;
-                padding: 15px;
-                margin-bottom: 10px;
-                transition: all 0.3s ease;
-            }
-            
-            .task-pending {
-                border-left: 5px solid #FFA726;
-            }
-            
-            .task-processing {
-                border-left: 5px solid #42A5F5;
-                animation: pulse-loading 1s infinite;
-            }
-            
-            .task-completed {
-                border-left: 5px solid #66BB6A;
-            }
-            
-            .task-error {
-                border-left: 5px solid #EF5350;
-            }
-            
-            .task-card:hover {
-                transform: translateX(5px);
-                box-shadow: 0 4px 15px rgba(51, 105, 30, 0.2);
+                border: 2px dashed #8BC34A;
+                margin-top: 15px;
             }
         </style>
     </head>
@@ -457,71 +413,6 @@ app.index_string = '''
 '''
 
 VALID_USERS = {'admin': 'admin', 'usuario': 'admin'}
-
-# ==================== ESTADOS DEL CHAT GUÍA ====================
-CHAT_STATES = {
-    'inicio': {
-        'mensaje': '¡Hola! 👋 Soy tu asistente virtual. Te guiaré paso a paso en el análisis de riesgo.',
-        'accion': '📝 Comencemos ingresando tu nombre completo como responsable del análisis.',
-        'icono': 'bi-chat-dots'
-    },
-    'esperando_nombre': {
-        'mensaje': '✅ Perfecto! Ahora seleccionemos la ubicación geográfica.',
-        'accion': '🌎 Selecciona el DEPARTAMENTO/REGIÓN donde realizarás el análisis.',
-        'icono': 'bi-geo-alt'
-    },
-    'esperando_provincia': {
-        'mensaje': '👍 Región seleccionada correctamente.',
-        'accion': '📍 Ahora selecciona la PROVINCIA específica.',
-        'icono': 'bi-pin-map'
-    },
-    'esperando_distrito': {
-        'mensaje': '✅ Provincia registrada.',
-        'accion': '🏘️ Finalmente, selecciona el DISTRITO.',
-        'icono': 'bi-buildings'
-    },
-    'ubicacion_completa': {
-        'mensaje': '🎯 ¡Ubicación completa!',
-        'accion': '⚠️ Ahora selecciona el TIPO DE PELIGRO que deseas analizar (Inundación Pluvial disponible).',
-        'icono': 'bi-exclamation-triangle'
-    },
-    'tipo_seleccionado': {
-        'mensaje': '✅ Tipo de peligro seleccionado.',
-        'accion': '🚀 Todo listo! Presiona "GENERAR MAPA" para iniciar el análisis.',
-        'icono': 'bi-lightning'
-    },
-    'generando_peligro': {
-        'mensaje': '⚙️ Generando Mapa de Peligro...',
-        'accion': '🔄 Proceso interno:\n• Cargando capas geográficas\n• Procesando modelo de peligro\n• Aplicando algoritmos de zonificación\n• Renderizando mapa final',
-        'icono': 'bi-gear-fill spin'
-    },
-    'peligro_completado': {
-        'mensaje': '✅ ¡Mapa de Peligro generado exitosamente!',
-        'accion': '💾 Descarga tu mapa. Luego podrás generar el mapa de Elementos Expuestos.',
-        'icono': 'bi-check-circle'
-    },
-    'peligro_descargado': {
-        'mensaje': '📥 Mapa de Peligro descargado.',
-        'accion': '🗺️ Opcional: Genera el mapa de ELEMENTOS EXPUESTOS para análisis completo.',
-        'icono': 'bi-layers'
-    },
-    'generando_elementos': {
-        'mensaje': '⚙️ Generando Mapa de Elementos Expuestos...',
-        'accion': '🔄 Proceso interno:\n• Identificando infraestructura crítica\n• Geolocalizando centros poblados\n• Mapeando instituciones educativas\n• Trazando redes viales\n• Integrando capas temáticas',
-        'icono': 'bi-gear-fill spin'
-    },
-    'elementos_completado': {
-        'mensaje': '✅ ¡Mapa de Elementos Expuestos generado!',
-        'accion': '💾 Descarga tu mapa. Luego podrás iniciar un nuevo análisis.',
-        'icono': 'bi-check-circle'
-    },
-    'todo_completado': {
-        'mensaje': '🎉 ¡Análisis completo finalizado!',
-        'accion': '🔄 Usa "NUEVO ANÁLISIS" para comenzar otra evaluación de riesgo.',
-        'icono': 'bi-trophy'
-    }
-}
-
 
 def leer_sql(ruta):
     if not os.path.exists(ruta):
@@ -587,7 +478,7 @@ login_layout = dbc.Container([
                     )
                 ], className='text-center'),
                 
-                html.H2("PLATAFORMA DE AUTOMATIZACIÓN MAPAS TEMÁTICOS", 
+                html.H2("PLATAFORMA DE AUTOMATIZACIÓN MAPAS TEMATICOS", 
                        className="text-center mb-4",
                        style={
                            'color': "#FEFFFE", 
@@ -652,8 +543,8 @@ login_layout = dbc.Container([
 # ==================== LAYOUT DEL DASHBOARD ====================
 dashboard_layout = dbc.Container([
     dcc.Download(id="download-map-image"),
-    dcc.Interval(id='task-refresh-interval', interval=2000),
-    dcc.Store(id='downloaded-tasks', data=[]),
+    dcc.Store(id='map-filepath-store', storage_type='memory'),
+    dcc.Store(id='loading-state', storage_type='memory', data=False),
     
     # Footer de contactos
     html.Div([
@@ -723,7 +614,7 @@ dashboard_layout = dbc.Container([
                                 dbc.Input(
                                     id='user-name-input',
                                     type='text',
-                                    placeholder='Ej: Daniel Porras Núñez',
+                                    placeholder='Ej: Daniel Porras Nuñez',
                                     className='mb-4'
                                 )
                             ]),
@@ -792,17 +683,7 @@ dashboard_layout = dbc.Container([
                                     disabled=True,
                                     className='mb-4'
                                 )
-                            ]),
-                            
-                            dbc.Button([
-                                html.I(className="bi bi-rocket-takeoff me-2"),
-                                'Generar Mapa'
-                            ],
-                            id='generate-map-button',
-                            color='success',
-                            size='lg',
-                            className='w-100 mb-3',
-                            disabled=True)
+                            ])
                         ], md=12)
                     ])
                 ])
@@ -813,83 +694,90 @@ dashboard_layout = dbc.Container([
         dbc.Col([
             dbc.Card([
                 dbc.CardBody([
-                    html.H5([
-                        html.I(className="bi bi-clock-history me-2", style={'color': '#7CB342'}),
-                        "Mis Peticiones"
-                    ], className='mb-3', style={'color': '#33691E', 'fontWeight': '800'}),
                     html.Div(
-                        id='tasks-list',
+                        id='map-container',
                         children=[
                             dbc.Alert([
-                                html.I(className="bi bi-info-circle me-2"),
-                                "No tienes peticiones activas"
-                            ], color="light", className='mb-0')
+                                html.Div([
+                                    html.I(className="bi bi-hourglass-split hourglass-spin", 
+                                          style={'fontSize': '4rem', 'color': '#7CB342'}),
+                                ], className='text-center mb-3'),
+                                html.H4("Esperando Generación", className="alert-heading text-center", style={'color': '#33691E', 'fontWeight': '700'}),
+                                html.P("Configure los parámetros en el panel izquierdo y haga clic en 'Generar Mapa' para comenzar.", 
+                                      className='text-center mb-0', style={'color': '#558B2F'})
+                            ], color="light", className='border-0 mb-4', style={'background': 'linear-gradient(135deg, #F1F8E9 0%, #DCEDC8 100%)'})
                         ],
-                        style={'maxHeight': '500px', 'overflowY': 'auto'}
-                    )
+                        className="result-panel"
+                    ),
+                    
+                    html.Hr(style={'borderTop': '2px dashed #C5E1A5', 'margin': '20px 0'}),
+                    
+                    dbc.Row([
+                        # COLUMNA IZQUIERDA - Resumen de selección
+                        dbc.Col([
+                            html.Div([
+                                html.H5([
+                                    html.I(className="bi bi-clipboard-check me-2", style={'color': '#7CB342'}),
+                                    "Resumen de Selección"
+                                ], className='mb-3', style={'color': '#33691E', 'fontWeight': '800'}),
+                                html.Div(
+                                    id='selection-summary',
+                                    children=[
+                                        dbc.Alert([
+                                            html.I(className="bi bi-info-circle me-2"),
+                                            "Complete todos los campos para continuar"
+                                        ], color="light", className='mb-0')
+                                    ],
+                                    className='selection-summary'
+                                )
+                            ])
+                        ], md=6, className='pe-2'),
+                        
+                        # COLUMNA DERECHA - Botones de acción
+                        dbc.Col([
+                            dbc.Button([
+                                html.I(className="bi bi-rocket-takeoff me-2"),
+                                'Generar Mapa'
+                            ],
+                            id='generate-map-button',
+                            color='success',
+                            size='lg',
+                            className='w-100 mb-3',
+                            disabled=True),
+                            
+                            dbc.Button([
+                                html.I(className="bi bi-download me-2"),
+                                'Descargar Mapa'
+                            ],
+                            id='download-button',
+                            color='info',
+                            size='lg',
+                            className='w-100 mb-3',
+                            disabled=True),
+                            
+                            dbc.Button([
+                                html.I(className="bi bi-folder-symlink me-2"),
+                                'Descargar Recursos (Inhabilitado)'
+                            ],
+                            id='download-recursos-button',
+                            className='w-100 btn-recursos',
+                            size='lg')
+                        ], md=6, className='ps-2')
+                    ], className='g-0')
                 ])
             ], className="h-100 shadow-lg border-0 animated")
         ], md=7, lg=8)
     ], className='g-4')
 ], fluid=True, className="p-4")
 
-# ==================== CHAT FLOTANTE ====================
-html.Div([
-    # Botón minimizar/expandir
-    html.Div([
-        dbc.Button(
-            html.I(id='chat-toggle-icon', className="bi bi-chevron-down"),
-            id='chat-toggle',
-            className='chat-toggle-btn',
-            n_clicks=0
-        )
-    ], className='chat-toggle-container'),
-    
-    # Contenedor del chat
-    html.Div([
-        # Header del chat
-        html.Div([
-            html.Div([
-                html.I(className="bi bi-robot me-2"),
-                html.Strong("Asistente Virtual")
-            ], className='chat-header-title'),
-            html.Div([
-                html.I(id='chat-status-icon', className="bi bi-chat-dots"),
-            ], className='chat-status')
-        ], className='chat-header'),
-        
-        # Cuerpo del chat con mensajes
-        html.Div([
-            html.Div([
-                html.I(id='chat-main-icon', className="bi bi-chat-dots chat-icon"),
-                html.Div([
-                    html.P(id='chat-mensaje', className='chat-message'),
-                    html.Div([
-                        html.I(className="bi bi-arrow-right-circle me-2"),
-                        html.Span(id='chat-accion', className='chat-action')
-                    ], className='chat-action-box')
-                ], className='chat-text')
-            ], className='chat-content')
-        ], className='chat-body', id='chat-body')
-    ], id='chat-container', className='chat-assistant')
-], className='chat-wrapper')
-
-
-
-
-# ==================== LAYOUT PRINCIPAL ====================
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
     dcc.Store(id='session-store', storage_type='session'),
+    dcc.Store(id='loading-state', storage_type='memory', data=False),
     html.Div(id='page-content')
 ])
 
-
- 
-
-
 # ==================== CALLBACKS ====================
-
 @app.callback(Output('page-content', 'children'), Input('session-store', 'data'))
 def display_page(session_data): 
     return dashboard_layout if session_data and session_data.get('logged_in') else login_layout
@@ -915,7 +803,11 @@ def login_user(n_clicks, username, password):
         "Usuario o contraseña incorrectos"
     ], color="danger")
 
-@app.callback(Output('session-store', 'data', allow_duplicate=True), Input('logout-button', 'n_clicks'), prevent_initial_call=True)
+@app.callback(
+    Output('session-store', 'data', allow_duplicate=True), 
+    Input('logout-button', 'n_clicks'), 
+    prevent_initial_call=True
+)
 def logout_user(n_clicks): 
     return {'logged_in': False}
 
@@ -949,15 +841,94 @@ def update_distritos(provincia):
     return [], True, None
 
 @app.callback(
-    Output('generate-map-button', 'disabled'),
+    Output('generate-map-button', 'disabled'), 
+    Output('download-button', 'disabled'),
+    Output('download-recursos-button', 'disabled'),
+    [Input(c, 'value') for c in ['user-name-input', 'map-type', 'departamento-dropdown', 'provincia-dropdown', 'distrito-dropdown']],
+    Input('loading-state', 'data')
+)
+def enable_buttons(*values): 
+    loading_state = values[-1]
+    form_values = values[:-1]
+    
+    # Si está cargando, deshabilitar todos los botones
+    if loading_state:
+        return True, True, True
+    
+    # Si no está cargando, habilitar según los valores del formulario
+    all_filled = all(form_values)
+    return not all_filled, not all_filled, False
+
+@app.callback(
+    Output('selection-summary', 'children'), 
     [Input(c, 'value') for c in ['user-name-input', 'map-type', 'departamento-dropdown', 'provincia-dropdown', 'distrito-dropdown']]
 )
-def enable_button(*values): 
-    return not all(values)
+def update_summary(user_name, map_type, departamento, provincia, distrito):
+    if not any([user_name, map_type, departamento, provincia, distrito]): 
+        return dbc.Alert([
+            html.I(className="bi bi-info-circle me-2"),
+            "Complete todos los campos para continuar"
+        ], color="light", className='mb-0')
+    
+    map_types_dict = {
+        'geografico': 'Ubicación Geográfica',
+        'geomorfologia': 'Geomorfología',
+        'climatica': 'Clasificación Climática',
+        'pendientes': 'Pendientes',
+        'vias': 'Vías',
+        'centros': 'Centros Poblados',
+        'geologia': 'Mapa Geológico'
+    }
+    
+    summary_items = []
+    if user_name: summary_items.append(html.Div([
+        html.I(className="bi bi-person-fill me-2", style={'color': '#7CB342'}),
+        html.Strong("Usuario: "),
+        user_name
+    ], className='mb-2'))
+    if map_type: summary_items.append(html.Div([
+        html.I(className="bi bi-map-fill me-2", style={'color': '#7CB342'}),
+        html.Strong("Tipo: "),
+        map_types_dict.get(map_type, '')
+    ], className='mb-2'))
+    if departamento: summary_items.append(html.Div([
+        html.I(className="bi bi-geo-alt-fill me-2", style={'color': '#7CB342'}),
+        html.Strong("Departamento: "),
+        departamento
+    ], className='mb-2'))
+    if provincia: summary_items.append(html.Div([
+        html.I(className="bi bi-building me-2", style={'color': '#7CB342'}),
+        html.Strong("Provincia: "),
+        provincia
+    ], className='mb-2'))
+    if distrito: summary_items.append(html.Div([
+        html.I(className="bi bi-house-fill me-2", style={'color': '#7CB342'}),
+        html.Strong("Distrito: "),
+        distrito
+    ], className='mb-2'))
+    
+    return html.Div(summary_items)
 
-# CALLBACK PARA CREAR NUEVA PETICIÓN
+# Callback para activar el estado de carga al presionar el botón
 @app.callback(
-    Output('generate-map-button', 'n_clicks'),
+    Output('loading-state', 'data', allow_duplicate=True),
+    Output('generate-map-button', 'children', allow_duplicate=True),
+    Input('generate-map-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def activate_loading(n_clicks):
+    """Activa el estado de carga cuando se presiona el botón"""
+    return True, [
+        html.I(className="bi bi-hourglass-split hourglass-spin me-2"),
+        'Procesando...'
+    ]
+
+# Callback de generación con estado de carga
+@app.callback(
+    Output('map-container', 'children'),
+    Output('map-filepath-store', 'data'),
+    Output('loading-state', 'data'),
+    Output('generate-map-button', 'children'),
     Input('generate-map-button', 'n_clicks'),
     [State('user-name-input', 'value'),
      State('map-type', 'value'),
@@ -966,121 +937,175 @@ def enable_button(*values):
      State('distrito-dropdown', 'value')],
     prevent_initial_call=True
 )
-def add_map_request(n_clicks, user_name, map_type, departamento, provincia, distrito):
-    task_id = map_queue.add_task(user_name, map_type, departamento, provincia, distrito)
+def generate_and_save_map_callback(n_clicks, user_name, map_type, departamento, provincia, distrito):
+    ruta_guardado = None
     
-    # Procesar en thread
-    thread = Thread(target=map_queue.process_task, args=(task_id,), daemon=True)
-    thread.start()
-    
-    print(f"✅ Petición agregada a la cola: {task_id} para usuario: {user_name}")
-    return 0
-
-# CALLBACK PARA ACTUALIZAR LISTA DE PETICIONES (FILTRADO POR USUARIO)
-@app.callback(
-    Output('tasks-list', 'children'),
-    [Input('task-refresh-interval', 'n_intervals'),
-     Input('user-name-input', 'value')]
-)
-def update_tasks_list(n_intervals, current_user_name):
-    # Si no hay nombre de usuario ingresado, mostrar mensaje
-    if not current_user_name:
-        return dbc.Alert([
-            html.I(className="bi bi-info-circle me-2"),
-            "Ingresa tu nombre de usuario para ver tus peticiones"
-        ], color="light", className='mb-0')
-    
-    # Filtrar tareas del usuario actual (por user_name_input)
-    user_tasks = {
-        task_id: task 
-        for task_id, task in map_queue.tasks.items() 
-        if task.get('user_name') == current_user_name
-    }
-    
-    if not user_tasks:
-        return dbc.Alert([
-            html.I(className="bi bi-info-circle me-2"),
-            "No tienes peticiones activas"
-        ], color="light", className='mb-0')
-    
-    task_cards = []
-    for task_id, task in sorted(user_tasks.items(), key=lambda x: x[1]['created_at'], reverse=True)[:10]:
-        status = task['status']
-        status_icons = {'pending': '⏳', 'processing': '⚙️', 'completed': '✅', 'error': '❌'}
-        status_text = {'pending': 'Pendiente', 'processing': 'Procesando', 'completed': 'Completado', 'error': 'Error'}
+    try:
+        if map_type == 'geografico':
+            print(f"\n🗺️ Generando mapa geográfico para {distrito}...")
+            ruta_guardado = generar_mapa_final(user_name, departamento, provincia, distrito)
+        elif map_type == 'geomorfologia':
+            print(f"\n🌄 Generando mapa de geomorfología para {distrito}...")
+            ruta_guardado = generar_mapa_geomorfologia(user_name, departamento, provincia, distrito)
+        elif map_type == 'climatica':
+            print(f"\n🌡️ Generando mapa climático para {distrito}...")
+            ruta_guardado = generar_mapa_climatica(user_name, departamento, provincia, distrito)
+        elif map_type == 'pendientes':
+            print(f"\n📐 Generando mapa de pendientes para {distrito}...")
+            ruta_pendientes = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PENDIENTES/pendientes.tif"
+            if not os.path.exists(ruta_pendientes):
+                raise FileNotFoundError(f"Archivo de pendientes no encontrado: {ruta_pendientes}")
+            ruta_guardado = generar_mapa_pendientes(user_name, departamento, provincia, distrito)
+        elif map_type == 'vias':
+            print(f"\n🛣️ Generando mapa de vías para {distrito}...")
+            ruta_guardado = generar_mapa_vias(user_name, departamento, provincia, distrito)
+        elif map_type == 'centros':
+            print(f"\n🏘️ Generando mapa de centros poblados para {distrito}...")
+            ruta_guardado = generar_mapa_poblacion(user_name, departamento, provincia, distrito)
+        elif map_type == 'geologia':
+            print(f"\n🪨 Generando mapa geológico para {distrito}...")
+            ruta_guardado = generar_mapa_geologia(user_name, departamento, provincia, distrito)
         
-        card_class = f"task-card task-{status}"
-        
-        content_items = [
+        if ruta_guardado and os.path.exists(ruta_guardado):
+            file_size_mb = os.path.getsize(ruta_guardado) / (1024 * 1024)
+            
+            success_alert = html.Div([
+                dbc.Alert([
+                    html.Div([
+                        html.I(className="bi bi-check-circle-fill success-icon", style={'fontSize': '4rem'})
+                    ], className='text-center mb-3'),
+                    html.H4("¡Mapa Generado Exitosamente!", 
+                           className="alert-heading text-center",
+                           style={'color': '#33691E', 'fontWeight': '800'}),
+                    html.Hr(style={'borderColor': '#7CB342'}),
+                    html.Div([
+                        html.I(className="bi bi-file-earmark-image me-2", style={'color': '#558B2F'}),
+                        html.Strong("Archivo: ", style={'color': '#33691E'}),
+                        html.Code(os.path.basename(ruta_guardado), 
+                                 style={'fontSize': '0.9em', 'background': '#F1F8E9', 'padding': '4px 8px', 'borderRadius': '6px'})
+                    ], className='mb-2'),
+                    html.Div([
+                        html.I(className="bi bi-hdd me-2", style={'color': '#558B2F'}),
+                        html.Strong("Tamaño: ", style={'color': '#33691E'}),
+                        f"{file_size_mb:.2f} MB"
+                    ], className='mb-3'),
+                ], color="success", className='border-0 mb-3'),
+                
+                html.Div([
+                    html.H5([
+                        html.I(className="bi bi-arrow-down-circle-fill me-2", style={'color': '#7CB342'}),
+                        "Descargar Mapa"
+                    ], className='text-center mb-3', style={'color': '#33691E', 'fontWeight': '700'}),
+                    html.P("Haz clic en el botón 'Descargar Mapa' para obtener el archivo.",
+                          className='text-center mb-0', style={'color': '#558B2F', 'fontSize': '0.95rem'})
+                ], className='download-section')
+            ])
+            
+            button_text = [
+                html.I(className="bi bi-rocket-takeoff me-2"),
+                'Generar Mapa'
+            ]
+            
+            return success_alert, ruta_guardado, False, button_text
+        else:
+            error_alert = dbc.Alert([
+                html.Div([
+                    html.I(className="bi bi-exclamation-triangle-fill", style={'fontSize': '3rem', 'color': '#EF6C00'})
+                ], className='text-center mb-3'),
+                html.H4("Error al Generar Mapa", className="alert-heading text-center", style={'fontWeight': '700'}),
+                html.Hr(),
+                html.P("No se pudo generar el mapa correctamente.", className='text-center'),
+                html.Div([
+                    html.Strong("Verifica:"),
+                    html.Ul([
+                        html.Li("Que los datos geográficos estén disponibles"),
+                        html.Li("Que el distrito seleccionado sea correcto"),
+                        html.Li("Para pendientes: que exista pendientes.tif"),
+                        html.Li("Para geología: que existan los shapefiles del departamento"),
+                        html.Li("Los logs en la terminal para más detalles")
+                    ])
+                ], className='mt-3')
+            ], color="danger", className='border-0')
+            
+            button_text = [
+                html.I(className="bi bi-rocket-takeoff me-2"),
+                'Generar Mapa'
+            ]
+            
+            return error_alert, None, False, button_text
+            
+    except FileNotFoundError as e:
+        error_alert = dbc.Alert([
             html.Div([
-                html.Span(f"{status_icons[status]} {task_id}", style={'fontWeight': '700', 'color': '#33691E', 'fontSize': '0.95rem'}),
-                html.Span(status_text[status], style={'float': 'right', 'fontWeight': '700', 'color': '#7CB342', 'fontSize': '0.85rem'})
-            ], className='mb-2'),
-            html.Div(f"📍 {task['distrito']} | 🗺️ {task['map_type']}", style={'fontSize': '0.9rem', 'color': '#558B2F', 'marginBottom': '8px'}),
+                html.I(className="bi bi-file-excel-fill", style={'fontSize': '3rem', 'color': '#FB8C00'})
+            ], className='text-center mb-3'),
+            html.H4("Archivo No Encontrado", className="alert-heading text-center", style={'fontWeight': '700'}),
+            html.Hr(),
+            html.P(f"No se pudo localizar el archivo necesario: {str(e)}", className='text-center'),
+            html.Div([
+                html.Strong("Ubicaciones esperadas:"),
+                html.Br(),
+                html.Code("Pendientes: /workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PENDIENTES/pendientes.tif",
+                         style={'background': '#FFF8E1', 'padding': '8px', 'borderRadius': '6px', 'display': 'block', 'marginBottom': '8px'}),
+                html.Code("Geología: /workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/GEOLOGIA/{DEPARTAMENTO}/geolo_{departamento}.shp",
+                         style={'background': '#FFF8E1', 'padding': '8px', 'borderRadius': '6px', 'display': 'block'})
+            ], className='mt-3 text-center')
+        ], color="warning", className='border-0')
+        
+        button_text = [
+            html.I(className="bi bi-rocket-takeoff me-2"),
+            'Generar Mapa'
         ]
         
-        if status == 'completed':
-            content_items.append(html.Div(f"💾 Tamaño: {task['file_size_mb']:.2f} MB", style={'fontSize': '0.85rem', 'color': '#558B2F', 'marginBottom': '8px'}))
-            content_items.append(
-                dbc.Button([
-                    html.I(className="bi bi-download me-1"),
-                    'Descargar'
-                ],
-                id={'type': 'download-btn', 'index': task_id},
-                color='info',
-                size='sm',
-                className='w-100 btn-info')
-            )
-        elif status == 'error':
-            error_msg = task['error'][:60] + '...' if len(task['error']) > 60 else task['error']
-            content_items.append(html.Div(f"⚠️ {error_msg}", style={'fontSize': '0.85rem', 'color': '#C62828', 'marginTop': '5px'}))
+        return error_alert, None, False, button_text
         
-        task_cards.append(html.Div(content_items, className=card_class))
-    
-    return task_cards if task_cards else dbc.Alert([
-        html.I(className="bi bi-info-circle me-2"),
-        "No tienes peticiones"
-    ], color="light", className='mb-0')
+    except Exception as e:
+        print(f"❌ Excepción al generar mapa: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        error_alert = dbc.Alert([
+            html.Div([
+                html.I(className="bi bi-x-octagon-fill", style={'fontSize': '3rem', 'color': '#C62828'})
+            ], className='text-center mb-3'),
+            html.H4("Error Inesperado", className="alert-heading text-center", style={'fontWeight': '700'}),
+            html.Hr(),
+            html.P(f"Ocurrió un error: {str(e)}", className='text-center'),
+            html.P("Revisa la consola para más detalles.", className='text-center mb-0 text-muted')
+        ], color="danger", className='border-0')
+        
+        button_text = [
+            html.I(className="bi bi-rocket-takeoff me-2"),
+            'Generar Mapa'
+        ]
+        
+        return error_alert, None, False, button_text
 
-# CALLBACK PARA DESCARGAR MAPA (SIN DUPLICADOS)
 @app.callback(
     Output('download-map-image', 'data'),
-    Output('downloaded-tasks', 'data'),
-    [Input({'type': 'download-btn', 'index': ALL}, 'n_clicks')],
-    [State({'type': 'download-btn', 'index': ALL}, 'id'),
-     State('downloaded-tasks', 'data')],
+    Input('download-button', 'n_clicks'),
+    State('map-filepath-store', 'data'),
     prevent_initial_call=True
 )
-def download_map(n_clicks_list, ids, downloaded_tasks):
-    if not ctx.triggered or not n_clicks_list:
-        return None, downloaded_tasks
-    
-    triggered_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    if not triggered_id:
-        return None, downloaded_tasks
-    
-    import json
-    task_id = json.loads(triggered_id).get('index')
-    
-    # Evitar descargas duplicadas
-    if not downloaded_tasks:
-        downloaded_tasks = []
-    
-    if task_id in downloaded_tasks:
-        print(f"⚠️ Descarga duplicada evitada: {task_id}")
-        return None, downloaded_tasks
-    
-    if not task_id or task_id not in map_queue.tasks:
-        return None, downloaded_tasks
-    
-    filepath = map_queue.tasks[task_id].get('filepath')
-    
-    if filepath and os.path.exists(filepath):
-        print(f"📥 Descargando ÚNICA VEZ [{task_id}]: {os.path.basename(filepath)}")
-        downloaded_tasks.append(task_id)
-        return dcc.send_file(filepath), downloaded_tasks
-    
-    return None, downloaded_tasks
+def download_map(n_clicks, filepath):
+    if not n_clicks or not filepath or not os.path.exists(filepath):
+        return None
+    try:
+        print(f"📥 Iniciando descarga de: {filepath}")
+        return dcc.send_file(filepath)
+    except Exception as e:
+        print(f"❌ Error al descargar archivo: {e}")
+        return None
+
+@app.callback(
+    Output('download-recursos-button', 'n_clicks'),
+    Input('download-recursos-button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def download_recursos(n_clicks):
+    if n_clicks:
+        print(f"🔧 Botón 'Descargar Recursos' presionado. Funcionalidad pendiente de implementar.")
+    return None
 
 if __name__ == '__main__':
     try:
@@ -1092,7 +1117,7 @@ if __name__ == '__main__':
         print(f"{'='*80}\n")
     
     print(f"\n{'='*80}")
-    print("🗺️ VERIFICANDO ARCHIVO DE PENDIENTES".center(80))
+    print("📐 VERIFICANDO ARCHIVO DE PENDIENTES".center(80))
     print(f"{'='*80}")
     
     ruta_pendientes = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PENDIENTES/pendientes.tif"
@@ -1118,13 +1143,16 @@ if __name__ == '__main__':
     print(f"{'='*80}\n")
     
     print(f"\n{'='*80}")
-    print("🚀 INICIANDO SERVIDOR DASH - SISTEMA CON FILTRADO POR USUARIO".center(80))
+    print("🚀 INICIANDO SERVIDOR DASH - SISTEMA DE MAPAS GEOGRÁFICOS".center(80))
     print(f"{'='*80}")
-    print("✅ Filtrado por usuario implementado")
-    print("✅ Sistema anti-descargas duplicadas")
-    print("✅ Cada usuario solo ve sus propias peticiones")
-    print("🔌 Puerto: 8051")
+    print("🌿 Paleta de colores: Verde")
+    print("🎨 Logo personalizado integrado")
+    print("⏳ Indicador de carga visual con botones en gris")
+    print("💎 Fondos transparentes plomizo-verdosos con glassmorphism")
+    print("🪨 Mapa Geológico integrado")
+    print("🔄 Estados de carga: Botones cambian a gris durante el procesamiento")
+    print("📌 Puerto: 8051")
     print("🌐 URL: http://127.0.0.1:8051")
     print(f"{'='*80}\n")
     
-    app.run(debug=True, port=8051, threaded=True)
+    app.run(debug=False, port=8051)

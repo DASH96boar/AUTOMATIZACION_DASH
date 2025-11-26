@@ -504,4 +504,3 @@ def generar_mapa_peligro_3param(nombre_usuario, departamento_sel, provincia_sel,
         print(f"   Provincia recibida: {provincia_sel}")
         print(f"   Provincias válidas: PIURA, SECHURA")
         return None
-    

@@ -1,0 +1,235 @@
+/* ==================== CHAT FLOTANTE ASISTENTE ==================== */
+
+.chat-wrapper {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    z-index: 9999;
+    animation: slideInRight 0.5s ease-out;
+}
+
+.chat-toggle-container {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 8px;
+}
+
+.chat-toggle-btn {
+    background: linear-gradient(135deg, var(--accent) 0%, #c0392b 100%);
+    border: none;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(231, 76, 60, 0.4);
+    transition: all 0.3s ease;
+}
+
+.chat-toggle-btn:hover {
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(231, 76, 60, 0.6);
+}
+
+.chat-toggle-btn i {
+    font-size: 1.2rem;
+    color: white;
+}
+
+.chat-assistant {
+    width: 380px;
+    max-height: 500px;
+    background: linear-gradient(135deg, rgba(15, 32, 56, 0.98) 0%, rgba(21, 45, 78, 0.98) 100%);
+    border-radius: 20px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.1);
+    overflow: hidden;
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-header {
+    background: linear-gradient(135deg, var(--accent) 0%, #c0392b 100%);
+    padding: 15px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+}
+
+.chat-header-title {
+    color: white;
+    font-size: 1rem;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+}
+
+.chat-header-title i {
+    font-size: 1.3rem;
+    animation: bounce 2s infinite;
+}
+
+.chat-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.chat-status i {
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 1.1rem;
+}
+
+.chat-body {
+    padding: 20px;
+    max-height: 420px;
+    overflow-y: auto;
+    background: rgba(10, 25, 47, 0.6);
+}
+
+.chat-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.chat-body::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+}
+
+.chat-body::-webkit-scrollbar-thumb {
+    background: var(--accent);
+    border-radius: 10px;
+}
+
+.chat-content {
+    display: flex;
+    gap: 15px;
+    animation: fadeInUp 0.5s ease-out;
+}
+
+.chat-icon {
+    font-size: 2.5rem;
+    color: var(--accent);
+    min-width: 50px;
+    text-align: center;
+    animation: pulse 2s infinite;
+}
+
+.chat-text {
+    flex: 1;
+}
+
+.chat-message {
+    color: white;
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 12px;
+    line-height: 1.5;
+}
+
+.chat-action-box {
+    background: rgba(231, 76, 60, 0.15);
+    border-left: 3px solid var(--accent);
+    padding: 12px 15px;
+    border-radius: 8px;
+    margin-top: 10px;
+}
+
+.chat-action {
+    color: rgba(255, 255, 255, 0.95);
+    font-size: 0.9rem;
+    line-height: 1.6;
+    display: block;
+}
+
+.chat-action-box i {
+    color: var(--accent);
+    font-size: 1.1rem;
+}
+
+/* Animaciones */
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        transform: translateY(20px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+@keyframes pulse {
+    0%, 100% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+}
+
+@keyframes bounce {
+    0%, 100% {
+        transform: translateY(0);
+    }
+    50% {
+        transform: translateY(-5px);
+    }
+}
+
+.spin {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+/* Responsivo */
+@media (max-width: 768px) {
+    .chat-wrapper {
+        bottom: 10px;
+        right: 10px;
+        left: 10px;
+    }
+    
+    .chat-assistant {
+        width: 100%;
+        max-width: 100%;
+    }
+    
+    .chat-body {
+        max-height: 350px;
+    }
+}
+
+/* Variantes de color para estados */
+.chat-success .chat-icon {
+    color: var(--success);
+}
+
+.chat-warning .chat-icon {
+    color: var(--warning);
+}
+
+.chat-processing .chat-icon {
+    color: var(--info);
+}

@@ -5,6 +5,11 @@
 - Muestra centros poblados con etiquetas FUERA de la zona de estudio
 - Líneas blancas gruesas y separación automática entre etiquetas
 - SOPORTE EXCLUSIVO PARA PIURA Y SECHURA
+
+MODIFICACIONES:
+- 1. Guardado en carpeta /workspaces/AUTOMATIZACION_DASH/PRUEBA/USUARIOS/{NOMBRE_USUARIO}.
+- 2. Limpieza de estructura de mapas de Ubicación (eliminación de grillado/coordenadas).
+- 3. IMPLEMENTACIÓN DEL PROMEDIO PONDERADO.
 """
 
 import geopandas as gpd
@@ -56,6 +61,17 @@ PESO_COLUMNAS_MAP = {
 # 🔑 RUTAS DE LÍMITES ADMINISTRATIVOS Y CENTROS POBLADOS (RUTAS CORREGIDAS)
 RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS_POBLADOS/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
 RUTA_DISTRITOS = f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS DEL PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
+
+# ==================== PONDERACIONES PARA EL ÍNDICE DE PELIGRO ====================
+# NOTA: La suma de todos los pesos DEBE ser 1.0 para que el rango de peligro sea de 1.0 a 4.0.
+PONDERACIONES = {
+    "P_GEOLOGIA": 0.15,      
+    "P_GEOMORFOLOGIA": 0.15, 
+    "P_PENDIENTE": 0.55,     
+    "P_PPMAX": 0.20          
+}
+# ===============================================================================
+
 RUTA_PROVINCIAS = f"{ruta_base}/DATA/MAPA DE UBICACION/PROVINCIAS DEL PERU/PROVINCIAS_inei_geogpsperu_suyopomalia.shp"
 RUTA_DEPARTAMENTOS = f"{ruta_base}/DATA/MAPA DE UBICACION/DEPARTAMENTOS_DEL_PERU/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp"
 RUTA_OCEANO = f"{ruta_base}/DATA/MAPA DE UBICACION/OCEANO/Océano.shp"
@@ -466,8 +482,10 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
         # Dibujar el foco (distrito) en rojo con hatch para destacar
         gdf_focus.plot(ax=ax, facecolor="red", edgecolor="red", linewidth=0.2, hatch='o', zorder=5)
     
-    if all(np.isfinite(bbox)):
-        grillado_grados_mejorado(ax, bbox, ndiv=5, decimales=1)
+    # --- MODIFICACIÓN DE ESTRUCTURA: Eliminando el grillado y las coordenadas ---
+    # Se eliminan los grillados de grados para limpiar el mapa de ubicación.
+    # if all(np.isfinite(bbox)):
+    #     grillado_grados_mejorado(ax, bbox, ndiv=5, decimales=1)
     
     ax.text(0.03, 0.05, titulo, transform=ax.transAxes, color="white", fontsize=8, 
             ha="left", va="bottom", zorder=8, 
@@ -482,7 +500,18 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
     ax.set_ylim(bbox[1], bbox[3])
     ax.set_facecolor("#f0f8ff")
     ax.set_aspect('equal', adjustable='box')
-    ax.axis('on')
+    
+    # Limpieza de ejes (ticks y labels) manteniendo el marco visible (ax.axis('on'))
+    ax.tick_params(left=False, right=False, top=False, bottom=False, labelleft=False, labelbottom=False)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.axis('on') # Se mantiene 'on' para conservar el marco (spines) y el fondo.
+    
+    # Asegurar que el marco sea visible
+    for spine in ax.spines.values():
+        spine.set_edgecolor('black')
+        spine.set_linewidth(1.2)
+        spine.set_visible(True)
 
 def asignar_color_peligro(valor):
     """Asigna color según el nivel de peligro"""
@@ -528,13 +557,13 @@ def obtener_rutas_capas(provincia_sel):
     return rutas
     
 # ════════════════════════════════════════════════════════════════════════════════════
-# 🚀 FUNCIÓN PRINCIPAL DE GENERACIÓN DE MAPA (CON COLUMNAS ESPECÍFICAS)
+# 🚀 FUNCIÓN PRINCIPAL DE GENERACIÓN DE MAPA (MODIFICADA PARA ACEPTAR USUARIO)
 # ════════════════════════════════════════════════════════════════════════════════════
 
-def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"):
+def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA", nombre_usuario=None):
     """
     Genera el mapa de peligro (susceptibilidad) para un distrito específico
-    combinando 4 capas.
+    combinando 4 capas, con una opción de carpeta de guardado personalizada.
     """
     
     distrito_upper = distrito.upper()
@@ -545,7 +574,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         departamento_upper = "PIURA"
     else:
         departamento_upper = str(departamento).upper()
-    
+
     # 💡 Configuración: Usar un CRS UTM estándar para Piura (Zona 17 Sur) para la intersección
     UTM_CRS = 32717 
 
@@ -701,19 +730,37 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
             traceback.print_exc()
             return None
 
-    # 4. Cálculo del índice de peligro (Suma de las columnas P_*)
+    # 4. Cálculo del índice de peligro (Promedio Ponderado)
     if gdf_final is not None and not gdf_final.empty:
         columnas_peso = [col for col in gdf_final.columns if col.startswith('P_')]
+
+        # Verificar que se hayan definido las ponderaciones
+        try:
+            if not all(col in PONDERACIONES for col in columnas_peso):
+                # Esto solo si se cambia el nombre de las columnas P_X en PESO_COLUMNAS_MAP
+                print(f"❌ Error: Las ponderaciones no están definidas para todas las columnas de peso encontradas: {columnas_peso}")
+                return None
+        except NameError:
+             # Esto ocurre si el diccionario PONDERACIONES no fue definido globalmente.
+             print("❌ Error CRÍTICO: El diccionario 'PONDERACIONES' no está definido en el ámbito global.")
+             return None
+            
         if len(columnas_peso) == 4:
+            
             # Re-confirmar que las columnas son numéricas antes de la suma
             for col in columnas_peso:
                  gdf_final[col] = pd.to_numeric(gdf_final[col], errors='coerce').fillna(0)
             
-            # La suma se realiza sobre las columnas P_GEOLOGIA, P_GEOMORFOLOGIA, P_PENDIENTE, P_PPMAX
-            gdf_final['INDICE_PELIGRO'] = gdf_final[columnas_peso].sum(axis=1)
-            
-            # Rangos fijos para clasificación: 4 (mín) a 16 (máx)
-            bins = [4, 7, 10, 13, 16.1] 
+            # 🎯 Implementación del Promedio Ponderado (Suma de Pesos * Valores, sin división por 1.0)
+            gdf_final['INDICE_PELIGRO'] = (
+                gdf_final['P_GEOLOGIA'] * PONDERACIONES['P_GEOLOGIA'] +
+                gdf_final['P_GEOMORFOLOGIA'] * PONDERACIONES['P_GEOMORFOLOGIA'] +
+                gdf_final['P_PENDIENTE'] * PONDERACIONES['P_PENDIENTE'] +
+                gdf_final['P_PPMAX'] * PONDERACIONES['P_PPMAX']
+            )
+
+            # Rango resultante es de 1.0 a 4.0.
+            bins = [1.00, 2.00, 3.00, 4.00, 4.01] 
             
             gdf_final['NIVEL_PELIGRO'] = pd.cut(
                 gdf_final['INDICE_PELIGRO'], 
@@ -724,7 +771,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
             ).astype(float)
             
             gdf_final['COLOR_PELIGRO'] = gdf_final['NIVEL_PELIGRO'].apply(asignar_color_peligro)
-            print("   ✅ Cálculo del Índice y Nivel de Peligro completado.")
+            print("   ✅ Cálculo del Índice y Nivel de Peligro completado (PROMEDIO PONDERADO).")
         else:
             print(f"❌ Error: Se esperaban 4 columnas de peso, se encontraron {len(columnas_peso)}. Columnas: {columnas_peso}")
             return None
@@ -796,6 +843,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         (gdf_distritos[COL_DPTO] == departamento_upper)
     ]
     
+    # Mapa de Ubicación Departamental (Limpio)
     mapa_ubicacion(ax_loc_dpto, gdf_departamentos, gdf_dpto_sel, gdf_provincia_sel, 
                    "UBICACIÓN DEPARTAMENTAL", provincia_upper, "provincia",
                    gdf_dpto_sel=gdf_dpto_sel, gdf_prov_sel=gdf_provincia_sel,
@@ -803,6 +851,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
                    col_prov=COL_PROV, col_dpto=COL_DPTO, gdf_departamentos=gdf_departamentos,
                    gdf_provincias=gdf_provincias, gdf_oceano=gdf_oceano)
 
+    # Mapa de Ubicación Provincial (Limpio)
     mapa_ubicacion(ax_loc_prov, distritos_provincia, gdf_provincia_sel, gdf_distrito_sel, 
                    "UBICACIÓN PROVINCIAL", distrito_upper, "distrito",
                    gdf_dpto_sel=gdf_dpto_sel, gdf_prov_sel=gdf_provincia_sel,
@@ -832,8 +881,16 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
                       loc='center', frameon=True, fontsize=7, title_fontsize=9,
                       framealpha=0.9, fancybox=True, edgecolor='black')
 
-    # 11. Guardado del mapa
-    output_dir = os.path.join(ruta_base, "RESULTADOS", "MAPAS_DE_PELIGRO", provincia_upper, distrito_upper)
+    # 11. Guardado del mapa (MODIFICACIÓN AQUÍ para carpeta de usuario)
+    
+    # Determinar el directorio de salida
+    if nombre_usuario:
+        # Ruta personalizada para el usuario: /workspaces/AUTOMATIZACION_DASH/PRUEBA/USUARIOS/{nombre_usuario}
+        output_dir = os.path.join(ruta_base, "USUARIOS", nombre_usuario)
+    else:
+        # Ruta por defecto original (si no se proporciona usuario)
+        output_dir = os.path.join(ruta_base, "RESULTADOS", "MAPAS_DE_PELIGRO", provincia_upper, distrito_upper)
+    
     os.makedirs(output_dir, exist_ok=True)
     nombre_archivo = f"MAPA_PELIGRO_DESLIZAMIENTO_{distrito_upper}_{provincia_upper}_4P.png"
     ruta_guardado_final = os.path.join(output_dir, nombre_archivo)
@@ -861,17 +918,18 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    # EJEMPLO DE USO
-    # Para probar con el ejemplo que falló en el log:
-    # distrito_ejemplo = "SECHURA"
-    # provincia_ejemplo = "SECHURA"
-    # departamento_ejemplo = "PIURA"
-
-    # Usando el ejemplo original del script:
+    # EJEMPLO DE USO (se añade el nombre de usuario para probar el guardado)
     distrito_ejemplo = "PIURA"
     provincia_ejemplo = "PIURA"
     departamento_ejemplo = "PIURA"
     
-    # Asegúrese de que las rutas definidas en 'ruta_base' y 'CAPAS_POR_PROVINCIA' 
-    # sean válidas en el entorno donde se ejecute el script.
-    generar_mapa_peligro_deslizamiento(distrito_ejemplo, provincia_ejemplo, departamento_ejemplo)
+    # Nombre de usuario para la subcarpeta de guardado
+    nombre_usuario_ejemplo = "USUARIO_EJEMPLO_PRUEBA1" 
+
+    print(f"📌 Ejecutando script con guardado personalizado para: {nombre_usuario_ejemplo}")
+    generar_mapa_peligro_deslizamiento(
+        distrito_ejemplo, 
+        provincia_ejemplo, 
+        departamento_ejemplo,
+        nombre_usuario=nombre_usuario_ejemplo 
+    )

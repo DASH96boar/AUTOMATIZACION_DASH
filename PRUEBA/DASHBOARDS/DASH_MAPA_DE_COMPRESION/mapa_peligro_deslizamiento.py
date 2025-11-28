@@ -1,15 +1,13 @@
 # -*- coding: utf-8 -*-
 """
 🎯 SCRIPT INTEGRADO: MAPA DE PELIGRO CON 4 PARÁMETROS + CENTROS POBLADOS
-- Calcula el mapa de peligro combinando: Pendiente + Geomorfología + Geología + pp_max
-- Muestra centros poblados con etiquetas FUERA de la zona de estudio
-- Líneas blancas gruesas y separación automática entre etiquetas
-- SOPORTE EXCLUSIVO PARA PIURA Y SECHURA
 
-MODIFICACIONES:
-- 1. Guardado en carpeta /workspaces/AUTOMATIZACION_DASH/PRUEBA/USUARIOS/{NOMBRE_USUARIO}.
-- 2. Limpieza de estructura de mapas de Ubicación (eliminación de grillado/coordenadas).
-- 3. IMPLEMENTACIÓN DEL PROMEDIO PONDERADO.
+MODIFICACIONES IMPLEMENTADAS:
+- 1. ✅ CORRECCIÓN CRÍTICA (mapa_ubicacion): Se corrige el 'AttributeError: 'NoneType' object has no attribute 'total_bounds''
+      dentro de 'mapa_ubicacion' (para tipo_mapa='provincia') al usar `gdf_context`.
+- 2. ✅ CORRECCIÓN DE GUARDADO (fig.savefig): Se elimina 'bbox_inches='tight'' y se maneja el error de 'tight_layout'
+      para prevenir fallos silenciosos/cuelgues durante el renderizado final (causa del error 'Archivo no generado').
+- 3. ✅ Se mantienen las proporciones de layout más compactas.
 """
 
 import geopandas as gpd
@@ -20,7 +18,6 @@ import os
 import numpy as np
 import matplotlib.patheffects as path_effects
 from shapely.geometry import box, mapping
-from shapely.ops import unary_union
 import pyproj
 from matplotlib.ticker import FuncFormatter
 from matplotlib.patches import Polygon, Rectangle, Patch
@@ -63,7 +60,6 @@ RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS_POBLADOS/Centros_Poblados_INE
 RUTA_DISTRITOS = f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS DEL PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
 
 # ==================== PONDERACIONES PARA EL ÍNDICE DE PELIGRO ====================
-# NOTA: La suma de todos los pesos DEBE ser 1.0 para que el rango de peligro sea de 1.0 a 4.0.
 PONDERACIONES = {
     "P_GEOLOGIA": 0.15,      
     "P_GEOMORFOLOGIA": 0.15, 
@@ -88,7 +84,7 @@ COL_DIST = 'NOMBDIST'
 COL_CCPP = 'NOMB_CCPP' 
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-# 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS (MEJORADAS)
+# 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblados, ax, radio_offset=0.12):
@@ -99,10 +95,12 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
     if gdf_centros_poblados is None or len(gdf_centros_poblados) == 0:
         return
     
-    distrito_boundary = gdf_distritos.boundary.unary_union
+    # CORRECCIÓN DE DEPRECACIÓN: Usar union_all()
+    distrito_boundary = gdf_distritos.boundary.union_all()
     
     try:
-        distrito_merged = gdf_distritos.unary_union
+        # CORRECCIÓN DE DEPRECACIÓN: Usar union_all()
+        distrito_merged = gdf_distritos.union_all()
         centroide = distrito_merged.centroid
     except:
         centroide = gdf_distritos.geometry.centroid.iloc[0]
@@ -203,7 +201,7 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
             continue
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-# FUNCIONES AUXILIARES PARA MAPAS Y CARGA DE DATOS (MODIFICADAS)
+# FUNCIONES AUXILIARES PARA MAPAS Y CARGA DE DATOS 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 def cargar_capa_admin(path, alias):
@@ -220,13 +218,10 @@ def cargar_capa_admin(path, alias):
             print(f"   ⚠️ GeoDataFrame para {alias} está vacío.")
             return None
             
-        # Forzar CRS a 4326 si no está definido, luego a 3857
         if gdf.crs is None or gdf.crs.to_epsg() != 4326:
-            # Asumir 4326 si no tiene CRS o si el CRS es incorrecto (p. ej. si lee 32717 o 32718)
-            # Solo para que la conversión a 3857 sea consistente con GeoPandas.
             gdf = gdf.to_crs(epsg=4326)
             
-        return gdf.to_crs(epsg=3857) # Proyección final para visualización/clipping inicial
+        return gdf.to_crs(epsg=3857)
     except Exception as e:
         print(f"   Error cargando {alias} desde {path}: {e}")
         return None
@@ -245,22 +240,16 @@ def cargar_capa_peligro(path, alias, target_utm_crs):
             print(f"   ⚠️ GeoDataFrame para {alias} está vacío.")
             return None
             
-        # Reproyección directa al CRS UTM de trabajo (32717)
         current_crs_epsg = gdf.crs.to_epsg() if gdf.crs else None
         
         if current_crs_epsg != target_utm_crs:
             print(f"   🔄 Reproyectando {alias} de {gdf.crs.to_string() if gdf.crs else 'sin CRS'} a EPSG:{target_utm_crs}")
             gdf = gdf.to_crs(epsg=target_utm_crs)
-        else:
-            print(f"   ✅ {alias} ya está en EPSG:{target_utm_crs}")
-
-        # 🛠️ Reparación de Geometrías (soluciona BBox [inf - inf] y fallas de clip)
+        
         if not gdf.geometry.is_valid.all():
             print(f"   ⚠️ Reparando geometrías inválidas de {alias}...")
-            # buffer(0) es la forma estándar de intentar reparar geometrías inválidas
             gdf.geometry = gdf.buffer(0).simplify(0.001) 
         
-        # Última verificación para BBox, si sigue en inf/nan, salimos.
         if not all(np.isfinite(gdf.total_bounds)):
              print(f"❌ Error CRÍTICO: BBox de {alias} es inválida incluso después de reparación. Abortando.")
              return None
@@ -271,10 +260,7 @@ def cargar_capa_peligro(path, alias, target_utm_crs):
         traceback.print_exc()
         return None
 
-
-# (Resto de funciones auxiliares como add_north_arrow_blanco_completo, 
-# calculate_numeric_scale, add_membrete, grillado_utm_proyectado, etc. permanecen igual)
-def add_north_arrow_blanco_completo(ax, xy_pos=(0.93, 0.08), size=0.06):
+def add_north_arrow_blanco_completo(ax, xy_pos=(0.95, 0.95), size=0.06):
     x_pos, y_pos = xy_pos
     s = size / 2
     trans = ax.transAxes
@@ -314,6 +300,9 @@ def calculate_numeric_scale(ax, fig):
     return f"1:{scale_rounded:,}"
 
 def add_membrete(ax, dpto, prov, dist, main_map_ax, fig_obj):
+    """
+    Agrega el membrete. La altura total de la caja es muy reducida para ser un pie de página compacto.
+    """
     escala_numerica = calculate_numeric_scale(main_map_ax, fig_obj)
     info = {
         "MAPA": f"MAPA DE SUSCEPTIBILIDAD: DISTRITO DE {dist.upper()}",
@@ -325,48 +314,48 @@ def add_membrete(ax, dpto, prov, dist, main_map_ax, fig_obj):
         "FECHA": datetime.date.today().strftime("%d / %m / %Y")
     }
     
+    # 🎯 Ajuste de límites: Altura reducida de 4 a 1.0 (más compacto que 1.5)
     ax.set_xlim(0, 10)
-    ax.set_ylim(0, 4)
+    ax.set_ylim(0, 1.0) 
     ax.axis('off')
     
-    ax.add_patch(Rectangle((0, 0), 10, 4, fill=False, edgecolor='black', lw=1.2))
-    ax.plot([0, 10], [3, 3], color='black', lw=1.2)
-    ax.plot([0, 7.5], [1.5, 1.5], color='black', lw=1.2)
-    ax.plot([2.5, 2.5], [1.5, 3], color='black', lw=1.2)
-    ax.plot([5, 5], [0, 3], color='black', lw=1.2)
-    ax.plot([7.5, 7.5], [0, 3], color='black', lw=1.2)
+    # Dibuja la cuadrícula del membrete (Altura total 1.0)
+    ax.add_patch(Rectangle((0, 0), 10, 1.0, fill=False, edgecolor='black', lw=1.2))
+    ax.plot([0, 10], [0.65, 0.65], color='black', lw=1.2) # Línea superior (Título)
+    ax.plot([0, 7.5], [0.35, 0.35], color='black', lw=1.2) # Línea media
+    ax.plot([2.5, 2.5], [0.35, 0.65], color='black', lw=1.2)
+    ax.plot([5, 5], [0, 0.65], color='black', lw=1.2)
+    ax.plot([7.5, 7.5], [0, 0.65], color='black', lw=1.2)
     
+    # Agrega el texto del membrete (ajustando las posiciones Y)
     padding = 0.15
-    ax.text(0 + padding, 3.5, "MAPA:", fontweight='bold', va='center', fontsize=8)
-    ax.text(1.8 + padding, 3.5, info["MAPA"], va='center', fontsize=8)
-    ax.text(0 + padding, 2.6, "DPTO:", fontweight='bold', va='center', fontsize=8)
-    ax.text(0 + padding, 2.0, info["DPTO"], va='center', fontsize=8)
-    ax.text(2.5 + padding, 2.6, "PROVINCIA:", fontweight='bold', va='center', fontsize=8)
-    ax.text(2.5 + padding, 2.0, info["PROVINCIA"], va='center', fontsize=8)
-    ax.text(5 + padding, 2.6, "DISTRITO:", fontweight='bold', va='center', fontsize=8)
-    ax.text(5 + padding, 2.0, info["DISTRITO"], va='center', fontsize=8)
-    ax.text(7.5 + padding, 2.5, "MAPA Nº", fontweight='bold', ha='left', va='center', fontsize=8)
-    ax.text(7.5 + padding, 0.8, info["MAPA_N"], ha='left', va='center', fontsize=10)
-    ax.text(0 + padding, 1.0, "ESCALA:", fontweight='bold', va='center', fontsize=8)
-    ax.text(0 + padding, 0.5, info["ESCALA"], va='center', fontsize=8)
-    ax.text(5 + padding, 1.0, "FECHA:", fontweight='bold', va='center', fontsize=8)
-    ax.text(5 + padding, 0.5, info["FECHA"], va='center', fontsize=8)
+    font_size_small = 6.0
+    font_size_medium = 7.0
+    
+    ax.text(0 + padding, 0.85, "MAPA:", fontweight='bold', va='center', fontsize=font_size_medium)
+    ax.text(1.8 + padding, 0.85, info["MAPA"], va='center', fontsize=font_size_medium)
+    
+    # Fila de Títulos (Y=0.5)
+    ax.text(0 + padding, 0.5, "DPTO:", fontweight='bold', va='center', fontsize=font_size_small)
+    ax.text(2.5 + padding, 0.5, "PROVINCIA:", fontweight='bold', va='center', fontsize=font_size_small)
+    ax.text(5 + padding, 0.5, "DISTRITO:", fontweight='bold', va='center', fontsize=font_size_small)
+    ax.text(7.5 + padding, 0.5, "MAPA Nº", fontweight='bold', ha='left', va='center', fontsize=font_size_small)
+    
+    # Fila de Contenido (Y=0.17)
+    ax.text(0 + padding, 0.17, info["DPTO"], va='center', fontsize=font_size_small)
+    ax.text(2.5 + padding, 0.17, info["PROVINCIA"], va='center', fontsize=font_size_small)
+    ax.text(5 + padding, 0.17, info["DISTRITO"], va='center', fontsize=font_size_small)
+    ax.text(7.5 + padding, 0.17, info["MAPA_N"], ha='left', va='center', fontsize=font_size_medium)
 
 
 def grillado_utm_proyectado(ax, bbox, ndiv=8):
     x0, y0, x1, y1 = bbox
     
-    # Intenta determinar la zona UTM a partir de la bbox (aproximado, pero útil)
-    lon_mid, _ = pyproj.Transformer.from_crs(3857, 4326, always_xy=True).transform((x0 + x1) / 2, (y0 + y1) / 2)
-    utm_zone = int(np.floor((lon_mid + 180) / 6) + 1)
-    
     def fmt_este(x, pos):
-        # Asegurarse de que el número tenga al menos 6 dígitos para la máscara
         num_str = f"{int(x):06d}"
         return num_str[:3] + " " + num_str[3:] + " E"
     
     def fmt_norte(y, pos):
-        # Asegurarse de que el número tenga al menos 7 dígitos para la máscara
         num_str = f"{int(y):07d}"
         return num_str[0] + " " + num_str[1:4] + " " + num_str[4:] + " N"
     
@@ -385,41 +374,6 @@ def grillado_utm_proyectado(ax, bbox, ndiv=8):
         label.set_verticalalignment('center')
         label.set_horizontalalignment('right')
 
-def grillado_grados_mejorado(ax, bbox, ndiv=5, decimales=2):
-    transformer = pyproj.Transformer.from_crs(3857, 4326, always_xy=True)
-    x0, y0, x1, y1 = bbox
-    lon_start, lat_start = transformer.transform(x0, y0)
-    lon_end, lat_end = transformer.transform(x1, y1)
-    
-    for lon in np.linspace(lon_start, lon_end, ndiv):
-        xs, ys = transformer.transform(np.full(2, lon), [lat_start, lat_end])
-        ax.plot(xs, ys, color="gray", linestyle="--", linewidth=0.3, alpha=0.5, zorder=0)
-    
-    for lat in np.linspace(lat_start, lat_end, ndiv):
-        xs, ys = transformer.transform([lon_start, lon_end], np.full(2, lat))
-        ax.plot(xs, ys, color="gray", linestyle="--", linewidth=0.3, alpha=0.5, zorder=0)
-    
-    def fmt_lon(x, pos):
-        lon, _ = transformer.transform(x, y0)
-        return f"{abs(lon):.{decimales}f}°{'W' if lon < 0 else 'E'}"
-    
-    def fmt_lat(y, pos):
-        _, lat = transformer.transform(x0, y)
-        return f"{abs(lat):.{decimales}f}°{'S' if lat < 0 else 'N'}"
-    
-    ax.xaxis.set_major_formatter(FuncFormatter(fmt_lon))
-    ax.yaxis.set_major_formatter(FuncFormatter(fmt_lat))
-    ax.tick_params(labelsize=6, width=0.4, length=2, direction="out", pad=2, 
-                   top=True, bottom=True, left=True, right=True, labeltop=True, labelright=False)
-    
-    for label in ax.get_xticklabels() + ax.get_yticklabels():
-        label.set_fontsize(6)
-    
-    for label in ax.get_yticklabels():
-        label.set_rotation(90)
-        label.set_verticalalignment('center')
-        label.set_horizontalalignment('right')
-
 def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, tipo_mapa, 
                    gdf_dpto_sel=None, gdf_prov_sel=None, col_prov=COL_PROV, col_dpto=COL_DPTO, 
                    departamento_sel=None, provincia_sel=None, gdf_departamentos=None, 
@@ -427,25 +381,36 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
     
     is_focus_valid = not gdf_focus.empty and all(np.isfinite(gdf_focus.total_bounds))
     
-    if tipo_mapa == "pais":
+    if tipo_mapa == "departamento": 
+        # Usa el GeoDataFrame de departamentos (pasado como palabra clave) para la extensión nacional
         bbox_geom = gdf_departamentos.total_bounds
         dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
-    elif tipo_mapa == "provincia":
-        bbox_geom = gdf_dpto_sel.total_bounds
-        dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.12, (bbox_geom[3] - bbox_geom[1]) * 0.12
-    elif tipo_mapa == "distrito":
-        provincia_seleccionada_geom = gdf_prov_sel.geometry.unary_union
-        # Intentar incluir provincias vecinas para el contexto
+        
+    elif tipo_mapa == "provincia": 
+        # FIX CRÍTICO: Usar gdf_context (que es gdf_dpto_sel) para la extensión departamental
+        if gdf_context.empty:
+             print("⚠️ Advertencia: gdf_context (departamento) está vacío en mapa_ubicacion.")
+             return 
+             
+        # CÓDIGO CORREGIDO: Usar gdf_context que es el dpto (gdf_dpto_sel)
+        bbox_geom = gdf_context.total_bounds 
+        dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.15, (bbox_geom[3] - bbox_geom[1]) * 0.15
+
+    elif tipo_mapa == "distrito": 
+        # CORRECCIÓN DE DEPRECACIÓN: Usar union_all()
+        provincia_seleccionada_geom = gdf_prov_sel.geometry.union_all()
         try:
             geoms_vecinas = [prov.geometry for _, prov in gdf_provincias.iterrows() 
                             if prov[col_prov] != provincia_sel and prov.geometry.touches(provincia_seleccionada_geom)]
-            area_de_interes = gpd.GeoSeries([provincia_seleccionada_geom] + geoms_vecinas, crs=gdf_prov_sel.crs).unary_union
+            # CORRECCIÓN DE DEPRECACIÓN: Usar union_all()
+            area_de_interes = gpd.GeoSeries([provincia_seleccionada_geom] + geoms_vecinas, crs=gdf_prov_sel.crs).union_all()
         except:
             area_de_interes = provincia_seleccionada_geom
             
         bbox_geom = area_de_interes.bounds
-        dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.15, (bbox_geom[3] - bbox_geom[1]) * 0.15
-    else:
+        dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.1, (bbox_geom[3] - bbox_geom[1]) * 0.1
+        
+    else: 
         bbox_geom = gdf_departamentos.total_bounds
         dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
     
@@ -457,35 +422,30 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
     if gdf_oceano is not None:
         gdf_oceano.clip(box(*bbox)).plot(ax=ax, color="#A4D4FF", edgecolor="none", zorder=2)
     
-    if tipo_mapa == "pais":
-        if gdf_base_map is not None:
-            gdf_base_map.plot(ax=ax, color="#f0eee8", edgecolor="black", linewidth=0.4, zorder=1)
-        if gdf_context is not None:
-            gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor="black", linewidth=0.7, zorder=3)
+    if tipo_mapa == "departamento":
+        gdf_departamentos.plot(ax=ax, color="#f0eee8", edgecolor="black", linewidth=0.4, zorder=1)
+        # Usar gdf_dpto_sel (opcional) para dibujar el foco, ya que gdf_focus es la bandera
+        if gdf_dpto_sel is not None:
+             gdf_dpto_sel.plot(ax=ax, color=AMARILLO_CLARO, edgecolor="black", linewidth=1.0, zorder=3)
+        
     elif tipo_mapa == "provincia":
-        if gdf_base_map is not None:
-            gdf_base_map.plot(ax=ax, color="#f0eee8", edgecolor="black", linewidth=0.4, zorder=1)
-        if gdf_context is not None:
-            gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor="black", linewidth=0.7, zorder=3)
+        gdf_departamentos.plot(ax=ax, color="#f0eee8", edgecolor="gray", linewidth=0.4, zorder=1)
+        if gdf_context is not None: # gdf_context es el departamento seleccionado (gdf_dpto_sel)
+             gdf_context.plot(ax=ax, facecolor='none', edgecolor="black", linewidth=0.8, zorder=2)
+        if gdf_prov_sel is not None:
+             gdf_prov_sel.plot(ax=ax, color=AMARILLO_CLARO, edgecolor="black", linewidth=1.0, zorder=3)
+        
     elif tipo_mapa == "distrito":
         if gdf_provincias is not None:
-            # Dibujar provincias vecinas en gris claro
             gdf_provincias[gdf_provincias[col_prov] != provincia_sel].plot(
                 ax=ax, color='lightgray', edgecolor='darkgray', linewidth=0.4, zorder=2)
-            # Dibujar provincia de interés en amarillo
-            gdf_prov_sel.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
-        if gdf_context is not None:
-            # Dibujar el contorno de todos los distritos dentro de la provincia
-            gdf_context.plot(ax=ax, facecolor='none', edgecolor="gray", linewidth=0.4, zorder=4)
-    
+        if gdf_prov_sel is not None:
+             gdf_prov_sel.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+        gdf_context.plot(ax=ax, facecolor='none', edgecolor="gray", linewidth=0.4, zorder=4)
+
     if is_focus_valid:
-        # Dibujar el foco (distrito) en rojo con hatch para destacar
+        # gdf_focus aquí es el distrito, provincia o dpto que queremos resaltar.
         gdf_focus.plot(ax=ax, facecolor="red", edgecolor="red", linewidth=0.2, hatch='o', zorder=5)
-    
-    # --- MODIFICACIÓN DE ESTRUCTURA: Eliminando el grillado y las coordenadas ---
-    # Se eliminan los grillados de grados para limpiar el mapa de ubicación.
-    # if all(np.isfinite(bbox)):
-    #     grillado_grados_mejorado(ax, bbox, ndiv=5, decimales=1)
     
     ax.text(0.03, 0.05, titulo, transform=ax.transAxes, color="white", fontsize=8, 
             ha="left", va="bottom", zorder=8, 
@@ -501,36 +461,29 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
     ax.set_facecolor("#f0f8ff")
     ax.set_aspect('equal', adjustable='box')
     
-    # Limpieza de ejes (ticks y labels) manteniendo el marco visible (ax.axis('on'))
     ax.tick_params(left=False, right=False, top=False, bottom=False, labelleft=False, labelbottom=False)
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.axis('on') # Se mantiene 'on' para conservar el marco (spines) y el fondo.
+    ax.axis('on') 
     
-    # Asegurar que el marco sea visible
     for spine in ax.spines.values():
         spine.set_edgecolor('black')
         spine.set_linewidth(1.2)
         spine.set_visible(True)
 
 def asignar_color_peligro(valor):
-    """Asigna color según el nivel de peligro"""
     if 1.00 <= valor < 2.00:
-        return COLORES_PELIGRO[0]  # Verde - BAJA
+        return COLORES_PELIGRO[0] 
     elif 2.00 <= valor < 3.00:
-        return COLORES_PELIGRO[1]  # Amarillo - MEDIA
+        return COLORES_PELIGRO[1] 
     elif 3.00 <= valor < 4.00:
-        return COLORES_PELIGRO[2]  # Naranja - ALTA
+        return COLORES_PELIGRO[2] 
     elif 4.00 <= valor <= 5.00:
-        return COLORES_PELIGRO[3]  # Rojo - MUY ALTA
+        return COLORES_PELIGRO[3] 
     else:
         return COLORES_PELIGRO[0]
 
-# FUNCIÓN PARA OBTENER RUTAS DE CAPAS SEGÚN PROVINCIA
 def obtener_rutas_capas(provincia_sel):
-    """
-    Obtiene las rutas de las capas de peligro según la provincia seleccionada.
-    """
     provincia_upper = provincia_sel.upper()
     
     if provincia_upper not in CAPAS_POR_PROVINCIA:
@@ -557,34 +510,32 @@ def obtener_rutas_capas(provincia_sel):
     return rutas
     
 # ════════════════════════════════════════════════════════════════════════════════════
-# 🚀 FUNCIÓN PRINCIPAL DE GENERACIÓN DE MAPA (MODIFICADA PARA ACEPTAR USUARIO)
+# 🚀 FUNCIÓN PRINCIPAL DE GENERACIÓN DE MAPA (CORREGIDA CON PROPORCIONES MÁS COMPACTAS)
 # ════════════════════════════════════════════════════════════════════════════════════
 
 def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA", nombre_usuario=None):
     """
     Genera el mapa de peligro (susceptibilidad) para un distrito específico
-    combinando 4 capas, con una opción de carpeta de guardado personalizada.
+    combinando 4 capas. Implementa el layout 4x2 con proporciones ajustadas.
     """
     
     distrito_upper = distrito.upper()
     provincia_upper = provincia.upper()
     
-    # 🔑 Sanitizar el argumento 'departamento'
     if re.search(r'[/\\]', str(departamento)) or len(str(departamento)) > 20:
         departamento_upper = "PIURA"
     else:
         departamento_upper = str(departamento).upper()
 
-    # 💡 Configuración: Usar un CRS UTM estándar para Piura (Zona 17 Sur) para la intersección
     UTM_CRS = 32717 
 
     print("="*80)
-    print(f"🔥 INICIANDO GENERACIÓN DE MAPA DE PELIGRO POR DESLIZAMIENTO (4 PARÁMETROS)")
+    print(f"🔥 INICIANDO GENERACIÓN DE MAPA DE PELIGRO POR DESLIZAMIENTOS PLUVIALES (4 PARÁMETROS)")
     print(f"   Distrito: {distrito_upper}, Provincia: {provincia_upper}, Dpto: {departamento_upper}")
     print(f"   CRS de Intersección (UTM): EPSG:{UTM_CRS}")
     print("="*80)
     
-    # 1. Cargar capas administrativas (usando cargar_capa_admin -> EPSG:3857)
+    # 1. Cargar capas administrativas
     try:
         gdf_distritos = cargar_capa_admin(RUTA_DISTRITOS, "DISTRITOS")
         gdf_provincias = cargar_capa_admin(RUTA_PROVINCIAS, "PROVINCIAS")
@@ -592,8 +543,8 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         gdf_ccpp = cargar_capa_admin(RUTA_CENTROS_POBLADOS, "CENTROS POBLADOS")
         gdf_oceano = cargar_capa_admin(RUTA_OCEANO, "OCÉANO")
         
-        if gdf_distritos is None:
-             print(f"❌ Error fatal al cargar GeoDataFrame de DISTRITOS.")
+        if gdf_distritos is None or gdf_provincias is None or gdf_departamentos is None:
+             print(f"❌ Error fatal al cargar una o más GeoDataFrame base (DISTRITOS, PROVINCIAS, DEPARTAMENTOS).")
              return None
              
     except Exception as e:
@@ -609,7 +560,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         ]
         
         if gdf_distrito_sel.empty:
-            print(f"❌ Distrito '{distrito}' no encontrado en el GeoDataFrame con los filtros aplicados (Dpto: {departamento_upper}).")
+            print(f"❌ Distrito '{distrito}' no encontrado.")
             return None
 
         gdf_provincia_sel = gdf_provincias[
@@ -620,6 +571,9 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         gdf_dpto_sel = gdf_departamentos[
             (gdf_departamentos[COL_DPTO] == departamento_upper)
         ]
+        
+        if gdf_dpto_sel.empty or gdf_provincia_sel.empty:
+             print(f"❌ Error: Departamento/Provincia '{departamento_upper}/{provincia_upper}' no encontrado/a en la capa administrativa.")
 
     except KeyError as e:
         print(f"❌ Error: Columna de filtro no encontrada. Error: {e}")
@@ -628,22 +582,17 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         print(f"❌ Error filtrando capas: {e}")
         return None
 
-
-    # 2. Cargar capas de peligro específicas (usando cargar_capa_peligro -> EPSG:32717)
+    # 2. Cargar capas de peligro específicas
     rutas_capas = obtener_rutas_capas(provincia_upper)
     if not rutas_capas:
         return None
 
     capas_peligro = {}
     for nombre, ruta in rutas_capas.items():
-        print(f"   Cargando capa {nombre}...")
-        # Llama a la nueva función que proyecta a UTM_CRS (32717) y repara geometría
         gdf = cargar_capa_peligro(ruta, nombre, UTM_CRS) 
-        
         if gdf is None:
             print(f"❌ Error CRÍTICO: La capa '{nombre}' no pudo ser cargada/proyectada.")
             return None
-            
         capas_peligro[nombre] = gdf
     
     if len(capas_peligro) < 4:
@@ -651,48 +600,32 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         return None
 
     # 3. Intersección, filtro y cálculo de índice de peligro
-    
-    # 1. Proyectar el límite del distrito al CRS UTM estándar (UTM_CRS = 32717)
-    # gdf_distrito_sel está en 3857, necesitamos proyectarlo a 32717 para la intersección.
     distrito_proj_utm = gdf_distrito_sel.to_crs(epsg=UTM_CRS)
-    distrito_geom_union = distrito_proj_utm.geometry.unary_union
+    # CORRECCIÓN DE DEPRECACIÓN: Usar union_all()
+    distrito_geom_union = distrito_proj_utm.geometry.union_all()
     
-    # Validación de geometría del distrito
     if not distrito_geom_union.is_valid:
-        print("⚠️ Advertencia: La geometría del distrito no es válida. Intentando repararla...")
         distrito_geom_union = distrito_geom_union.buffer(0).buffer(0) 
 
-    # DEBUG: Mostrar Bounding Boxes (en UTM)
-    x0, y0, x1, y1 = distrito_geom_union.bounds
-    print(f"\n   📏 Extensión (BBox) del Distrito de {distrito_upper} (UTM {UTM_CRS}): X:[{x0:.0f} - {x1:.0f}], Y:[{y0:.0f} - {y1:.0f}]")
+    print("\n🔬 Procesando capas de peligro y calculando índice...")
     
     gdf_final = None
-    
-    print("\n🔬 Procesando capas de peligro y calculando índice...")
     
     for nombre, gdf_capa_utm in capas_peligro.items():
         try:
             col_peso_especifico = PESO_COLUMNAS_MAP.get(nombre)
             columna_salida = f'P_{nombre}' 
             
-            # 1. Comprobar si la columna existe en la capa
             if col_peso_especifico not in gdf_capa_utm.columns:
-                print(f"❌ Error crítico: La capa '{nombre}' NO tiene la columna de peso esperada '{col_peso_especifico}'. Columnas disponibles: {list(gdf_capa_utm.columns)}")
+                print(f"❌ Error crítico: La capa '{nombre}' NO tiene la columna de peso esperada '{col_peso_especifico}'.")
                 return None
 
-            # DEBUG: Mostrar BBox de la capa antes de recortar (ya está en UTM_CRS)
-            gx0, gy0, gx1, gy1 = gdf_capa_utm.total_bounds
-            print(f"   📏 Extensión (BBox) de la capa {nombre} (UTM {UTM_CRS}): X:[{gx0:.0f} - {gx1:.0f}], Y:[{gy0:.0f} - {gy1:.0f}]")
-
-            # 3. Recortar la capa al límite del distrito 
             gdf_recortada = gpd.clip(gdf_capa_utm, distrito_geom_union)
             
-            # 4. Verificar si el recorte fue exitoso
             if gdf_recortada.empty:
-                print(f"❌ Alerta: La capa '{nombre}' quedó **VACÍA** después de recortar con el distrito de {distrito_upper}.")
+                print(f"❌ Alerta: La capa '{nombre}' quedó **VACÍA** después de recortar.")
                 return None
 
-            # 5. Seleccionar la columna de peso y renombrarla
             gdf_select_renamed = gdf_recortada[[col_peso_especifico, 'geometry']].copy()
             
             try:
@@ -702,27 +635,15 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
 
             gdf_select_renamed.rename(columns={col_peso_especifico: columna_salida}, inplace=True)
             
-            # 6. Realizar la operación de superposición (overlay)
             if gdf_final is None:
                 gdf_final = gdf_select_renamed.copy()
-                # 💡 CORRECCIÓN 1/2: Normalizar la geometría de la primera capa con buffer(0)
                 gdf_final.geometry = gdf_final.buffer(0) 
-                print(f"   GDF inicializado con {nombre}. Filas: {len(gdf_final)}")
             else:
-                print(f"   Realizando overlay de GDF acumulado ({len(gdf_final)} filas) con capa {nombre} ({len(gdf_select_renamed)} filas)...")
-                
-                # Realizar la intersección para combinar los atributos de las capas
                 gdf_final = gpd.overlay(gdf_final, gdf_select_renamed, how='intersection', keep_geom_type=False)
-                
-                # 💡 CORRECCIÓN 2/2: Normalizar la geometría después de cada intersección para evitar errores de tipos mixtos (Polygon/MultiPolygon)
-                # Esto resuelve el error "NotImplementedError: df1 contains mixed geometry types."
                 gdf_final.geometry = gdf_final.buffer(0)
                 
-                print(f"   Resultado del overlay: {len(gdf_final)} filas.")
-                
-                # 7. Verificar el resultado de la intersección
                 if gdf_final.empty:
-                    print(f"❌ Error: El resultado de la intersección de capas se vació después de procesar '{nombre}'. Esto indica que no hay áreas de coincidencia entre las capas.")
+                    print(f"❌ Error: El resultado de la intersección de capas se vació después de procesar '{nombre}'.")
                     return None
                 
         except Exception as e:
@@ -730,28 +651,14 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
             traceback.print_exc()
             return None
 
-    # 4. Cálculo del índice de peligro (Promedio Ponderado)
+    # Cálculo del índice de peligro
     if gdf_final is not None and not gdf_final.empty:
         columnas_peso = [col for col in gdf_final.columns if col.startswith('P_')]
 
-        # Verificar que se hayan definido las ponderaciones
-        try:
-            if not all(col in PONDERACIONES for col in columnas_peso):
-                # Esto solo si se cambia el nombre de las columnas P_X en PESO_COLUMNAS_MAP
-                print(f"❌ Error: Las ponderaciones no están definidas para todas las columnas de peso encontradas: {columnas_peso}")
-                return None
-        except NameError:
-             # Esto ocurre si el diccionario PONDERACIONES no fue definido globalmente.
-             print("❌ Error CRÍTICO: El diccionario 'PONDERACIONES' no está definido en el ámbito global.")
-             return None
-            
         if len(columnas_peso) == 4:
-            
-            # Re-confirmar que las columnas son numéricas antes de la suma
             for col in columnas_peso:
                  gdf_final[col] = pd.to_numeric(gdf_final[col], errors='coerce').fillna(0)
             
-            # 🎯 Implementación del Promedio Ponderado (Suma de Pesos * Valores, sin división por 1.0)
             gdf_final['INDICE_PELIGRO'] = (
                 gdf_final['P_GEOLOGIA'] * PONDERACIONES['P_GEOLOGIA'] +
                 gdf_final['P_GEOMORFOLOGIA'] * PONDERACIONES['P_GEOMORFOLOGIA'] +
@@ -759,9 +666,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
                 gdf_final['P_PPMAX'] * PONDERACIONES['P_PPMAX']
             )
 
-            # Rango resultante es de 1.0 a 4.0.
             bins = [1.00, 2.00, 3.00, 4.00, 4.01] 
-            
             gdf_final['NIVEL_PELIGRO'] = pd.cut(
                 gdf_final['INDICE_PELIGRO'], 
                 bins=bins, 
@@ -771,104 +676,113 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
             ).astype(float)
             
             gdf_final['COLOR_PELIGRO'] = gdf_final['NIVEL_PELIGRO'].apply(asignar_color_peligro)
-            print("   ✅ Cálculo del Índice y Nivel de Peligro completado (PROMEDIO PONDERADO).")
+            print("   ✅ Cálculo del Índice y Nivel de Peligro completado.")
         else:
-            print(f"❌ Error: Se esperaban 4 columnas de peso, se encontraron {len(columnas_peso)}. Columnas: {columnas_peso}")
+            print(f"❌ Error: Se esperaban 4 columnas de peso, se encontraron {len(columnas_peso)}. Abortando.")
             return None
     else:
-        print("❌ El GeoDataFrame final de peligro está vacío. Falló en una intersección previa.")
+        print("❌ El GeoDataFrame final de peligro está vacío. Abortando.")
         return None
 
     # 5. Preparación de Centros Poblados y Proyección
-    # Proyectamos el resultado final a 3857 para el mapa con contextily
     gdf_peligro_plot = gdf_final.to_crs(epsg=3857) 
-    
-    # El GeoDataFrame del distrito seleccionado (gdf_distrito_sel) ya está en 3857
     gdf_distrito_sel_3857 = gdf_distrito_sel 
     
-    # Recortar los CCPP que caen dentro del distrito usando sjoin.
     try:
-        gdf_ccpp_dentro_proj = gpd.sjoin(gdf_ccpp, gdf_distrito_sel_3857, op='within', how='inner')
-        
+        gdf_ccpp_dentro_proj = gpd.sjoin(gdf_ccpp, gdf_distrito_sel_3857, predicate='within', how='inner')
         cols_to_drop = [col for col in gdf_ccpp_dentro_proj.columns if col.startswith('index_')]
         gdf_ccpp_dentro_proj = gdf_ccpp_dentro_proj.drop(columns=cols_to_drop, errors='ignore')
 
     except Exception as e:
-        print(f"⚠️ Advertencia: Error al realizar el sjoin de CCPP: {e}. Usando GeoDataFrame vacío para CCPP.")
         gdf_ccpp_dentro_proj = gpd.GeoDataFrame(geometry=[], crs=3857)
 
-    # 6. Generación del Mapa
-    fig = plt.figure(figsize=(12, 16))
-    gs = fig.add_gridspec(3, 3, height_ratios=[1, 1, 0.4], width_ratios=[1, 1, 1])
+    # 6. Generación del Mapa (LAYOUT 4x2 CON PROPORCIONES MÁS COMPACTAS)
     
-    ax_mapa = fig.add_subplot(gs[:, 0:2])
+    # 🎯 Ajuste 1: Figura menos vertical. Aspecto (18 ancho, 14 alto)
+    fig = plt.figure(figsize=(18, 14)) 
     
-    ax_loc_dpto = fig.add_subplot(gs[0, 2])
-    ax_loc_prov = fig.add_subplot(gs[1, 2])
-    ax_membrete = fig.add_subplot(gs[2, 2])
+    # 🎯 Ajuste 2: Reducción extrema de la altura de la fila inferior (Membrete/Leyenda)
+    # Ratios de altura: [Mapa/Ubicación 1, Mapa/Ubicación 2, Mapa/Ubicación 3, Membrete/Leyenda]
+    gs = fig.add_gridspec(
+        4, 2, 
+        height_ratios=[1.2, 1.2, 1.2, 0.25],  # 0.25 es muy compacto
+        width_ratios=[2, 1]          
+    )
     
-    # --- Dibujo del Mapa Principal ---
+    # --- Asignación de Paneles ---
+    ax_mapa = fig.add_subplot(gs[0:3, 0])      
+    ax_membrete = fig.add_subplot(gs[3, 0])    
+    ax_loc_dpto = fig.add_subplot(gs[0, 1])    
+    ax_loc_prov = fig.add_subplot(gs[1, 1])    
+    ax_loc_dist = fig.add_subplot(gs[2, 1])    
+    ax_leyenda = fig.add_subplot(gs[3, 1])     
+
     
+    # --- Dibujo del Mapa Principal (ax_mapa) ---
+    print("🛰️ Descargando imagen satelital...")
     ctx.add_basemap(ax_mapa, crs=gdf_peligro_plot.crs.to_string(), source=ctx.providers.OpenStreetMap.Mapnik, zoom=12)
-    
+    print("🎨 Dibujando niveles de peligro y etiquetas...")
     gdf_peligro_plot.plot(ax=ax_mapa, color=gdf_peligro_plot['COLOR_PELIGRO'], edgecolor='none', alpha=0.95, zorder=5)
-    
     gdf_distrito_sel_3857.plot(ax=ax_mapa, facecolor='none', edgecolor='black', linewidth=1.5, zorder=6)
-    
     agregar_etiquetas_ordenadas_circularmente(
         gdf_distrito_sel_3857, 
         gdf_ccpp_dentro_proj, 
         ax_mapa
     )
-    
     ax_mapa.set_title(f"MAPA DE SUSCEPTIBILIDAD A DESLIZAMIENTOS PLUVIALES\nDISTRITO DE {distrito_upper}", 
                       fontsize=14, fontweight='bold', pad=15)
-    
     x_min, y_min, x_max, y_max = gdf_peligro_plot.total_bounds
     ax_mapa.set_xlim(x_min, x_max)
     ax_mapa.set_ylim(y_min, y_max)
     ax_mapa.set_aspect('equal', adjustable='box')
-
-    add_north_arrow_blanco_completo(ax_mapa)
-    ax_mapa.add_artist(ScaleBar(1.0, units='km', location='lower left', box_alpha=0.8, 
+    add_north_arrow_blanco_completo(ax_mapa, xy_pos=(0.95, 0.95)) 
+    ax_mapa.add_artist(ScaleBar(1.0, units='km', location='lower right', box_alpha=0.8, 
                                 frameon=True, color='black', box_color='white'))
-    
     grillado_utm_proyectado(ax_mapa, (x_min, y_min, x_max, y_max), ndiv=8)
 
 
-    # --- Dibujo de Mapas de Ubicación ---
-    
+    # --- Dibujo de Mapas de Ubicación (Columna 1) ---
+    print("🗺️ Generando Mapas de Ubicación...")
     distritos_provincia = gdf_distritos[
         (gdf_distritos[COL_PROV] == provincia_upper) & 
         (gdf_distritos[COL_DPTO] == departamento_upper)
     ]
     
-    # Mapa de Ubicación Departamental (Limpio)
-    mapa_ubicacion(ax_loc_dpto, gdf_departamentos, gdf_dpto_sel, gdf_provincia_sel, 
+    # 1. UBICACIÓN NACIONAL (Focus: Departamento)
+    mapa_ubicacion(ax_loc_dpto, gdf_departamentos, gdf_dpto_sel, gdf_dpto_sel, 
+                   "UBICACIÓN NACIONAL", departamento_upper, "departamento",
+                   gdf_prov_sel=gdf_provincia_sel,
+                   departamento_sel=departamento_upper, provincia_sel=provincia_upper,
+                   col_prov=COL_PROV, col_dpto=COL_DPTO, gdf_departamentos=gdf_departamentos,
+                   gdf_provincias=gdf_provincias, gdf_oceano=gdf_oceano)
+
+    # 2. UBICACIÓN DEPARTAMENTAL (Context: Departamento, Focus: Provincia)
+    mapa_ubicacion(ax_loc_prov, gdf_departamentos, gdf_dpto_sel, gdf_provincia_sel, 
                    "UBICACIÓN DEPARTAMENTAL", provincia_upper, "provincia",
-                   gdf_dpto_sel=gdf_dpto_sel, gdf_prov_sel=gdf_provincia_sel,
+                   gdf_prov_sel=gdf_provincia_sel,
                    departamento_sel=departamento_upper, provincia_sel=provincia_upper,
                    col_prov=COL_PROV, col_dpto=COL_DPTO, gdf_departamentos=gdf_departamentos,
                    gdf_provincias=gdf_provincias, gdf_oceano=gdf_oceano)
-
-    # Mapa de Ubicación Provincial (Limpio)
-    mapa_ubicacion(ax_loc_prov, distritos_provincia, gdf_provincia_sel, gdf_distrito_sel, 
+                   
+    # 3. UBICACIÓN PROVINCIAL (Context: Distritos vecinos, Focus: Distrito)
+    mapa_ubicacion(ax_loc_dist, gdf_provincias, distritos_provincia, gdf_distrito_sel, 
                    "UBICACIÓN PROVINCIAL", distrito_upper, "distrito",
-                   gdf_dpto_sel=gdf_dpto_sel, gdf_prov_sel=gdf_provincia_sel,
+                   gdf_dpto_sel=gdf_dpto_sel, 
+                   gdf_prov_sel=gdf_provincia_sel, # Se pasa para el cálculo de bounds del mapa distrital.
                    departamento_sel=departamento_upper, provincia_sel=provincia_upper,
                    col_prov=COL_PROV, col_dpto=COL_DPTO, gdf_departamentos=gdf_departamentos,
                    gdf_provincias=gdf_provincias, gdf_oceano=gdf_oceano)
+                   
 
-    # --- Membrete y Leyenda ---
+    # --- Membrete y Leyenda (Fila 3) ---
 
+    # 4. Dibujar el Membrete (ax_membrete) - Usa la función 'add_membrete' modificada
     add_membrete(ax_membrete, departamento_upper, provincia_upper, distrito_upper, ax_mapa, fig)
     
-    # Posición de la leyenda ajustada para no superponerse
-    ax_leyenda = fig.add_axes([0.70, 0.35, 0.2, 0.25], frameon=False) 
+    # 5. Dibujar la Leyenda (ax_leyenda)
     ax_leyenda.axis('off')
     
     legend_handles = []
-    
     for color, label in zip(COLORES_PELIGRO, ETIQUETAS_PELIGRO):
         patch = Patch(facecolor=color, edgecolor='black', linewidth=0.5, label=label)
         legend_handles.append(patch)
@@ -878,37 +792,47 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
     legend_handles.append(ccpp_handle)
     
     ax_leyenda.legend(handles=legend_handles, title="Nivel de Susceptibilidad", 
-                      loc='center', frameon=True, fontsize=7, title_fontsize=9,
-                      framealpha=0.9, fancybox=True, edgecolor='black')
+                      loc='center left', frameon=True, fontsize=6.5, title_fontsize=8, 
+                      framealpha=0.9, fancybox=True, edgecolor='black', bbox_to_anchor=(0.0, 1.0)) 
 
-    # 11. Guardado del mapa (MODIFICACIÓN AQUÍ para carpeta de usuario)
+
+    # 7. Guardado del mapa
     
-    # Determinar el directorio de salida
     if nombre_usuario:
-        # Ruta personalizada para el usuario: /workspaces/AUTOMATIZACION_DASH/PRUEBA/USUARIOS/{nombre_usuario}
         output_dir = os.path.join(ruta_base, "USUARIOS", nombre_usuario)
     else:
-        # Ruta por defecto original (si no se proporciona usuario)
         output_dir = os.path.join(ruta_base, "RESULTADOS", "MAPAS_DE_PELIGRO", provincia_upper, distrito_upper)
     
     os.makedirs(output_dir, exist_ok=True)
     nombre_archivo = f"MAPA_PELIGRO_DESLIZAMIENTO_{distrito_upper}_{provincia_upper}_4P.png"
     ruta_guardado_final = os.path.join(output_dir, nombre_archivo)
     
-    # Ajustar tight_layout para mejor espaciado
-    fig.tight_layout(rect=[0, 0.0, 1, 1]) 
+    print(f"🖼️ Intentando ajustar y guardar el mapa en: {ruta_guardado_final}")
     
+    # 🚨 CORRECCIÓN CLAVE: Envolver tight_layout en un try/except para evitar cuelgues.
     try:
-        fig.savefig(ruta_guardado_final, dpi=300, bbox_inches='tight')
+        fig.tight_layout(rect=[0, 0.0, 1, 1]) 
+        print("✅ tight_layout aplicado.")
+    except Exception as e:
+        print(f"⚠️ Advertencia: Error en tight_layout ({e}). Continuando con layout predeterminado.")
+        pass 
+        
+    try:
+        # CORRECCIÓN CLAVE: Se remueve bbox_inches='tight' (que causó el error anterior)
+        fig.savefig(ruta_guardado_final, dpi=300) 
         plt.close(fig)
 
+        if not os.path.exists(ruta_guardado_final):
+             raise IOError("El archivo no se escribió en disco a pesar de que savefig terminó sin excepción.")
+        
         print("="*80)
-        print(f"✅ Mapa de peligro guardado exitosamente")
+        print(f"✅ Mapa de peligro guardado exitosamente (Proporciones más compactas)")
         print(f"   📁 Ubicación: {ruta_guardado_final}")
         print("="*80 + "\n")
         return ruta_guardado_final
     except Exception as e:
-        print(f"❌ Error al guardar el archivo: {e}")
+        print(f"❌ Error CRÍTICO al guardar el archivo: {e}")
+        traceback.print_exc()
         plt.close(fig)
         return None
 
@@ -918,13 +842,13 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 if __name__ == "__main__":
-    # EJEMPLO DE USO (se añade el nombre de usuario para probar el guardado)
+    # EJEMPLO DE USO 
     distrito_ejemplo = "PIURA"
     provincia_ejemplo = "PIURA"
     departamento_ejemplo = "PIURA"
     
-    # Nombre de usuario para la subcarpeta de guardado
-    nombre_usuario_ejemplo = "USUARIO_EJEMPLO_PRUEBA1" 
+    # Nombre de usuario para la subcarpeta de guardado (cambie esto según sea necesario)
+    nombre_usuario_ejemplo = "USUARIOS" 
 
     print(f"📌 Ejecutando script con guardado personalizado para: {nombre_usuario_ejemplo}")
     generar_mapa_peligro_deslizamiento(

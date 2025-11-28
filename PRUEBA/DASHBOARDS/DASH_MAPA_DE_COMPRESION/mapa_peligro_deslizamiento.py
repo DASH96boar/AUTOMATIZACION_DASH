@@ -8,6 +8,9 @@ MODIFICACIONES IMPLEMENTADAS:
 - 2. ✅ CORRECCIÓN DE GUARDADO (fig.savefig): Se elimina 'bbox_inches='tight'' y se maneja el error de 'tight_layout'
       para prevenir fallos silenciosos/cuelgues durante el renderizado final (causa del error 'Archivo no generado').
 - 3. ✅ Se mantienen las proporciones de layout más compactas.
+- 4. ✅ AJUSTE DE COLOR: Se cambia el Verde Lima por un Verde Oscuro (#33A02C) para mejor contraste en el nivel 'Baja' (1).
+- 5. 🚨 AJUSTE CRÍTICO DE CLASIFICACIÓN (FINAL): Se usa la función 'asignar_color_peligro' con umbrales ajustados 
+      a [1.75, 2.50, 3.25] para convertir zonas Verdes/Amarillas en Rojas/Naranjas, respetando la estructura solicitada.
 """
 
 import geopandas as gpd
@@ -61,10 +64,10 @@ RUTA_DISTRITOS = f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS DEL PERU/DISTRIT
 
 # ==================== PONDERACIONES PARA EL ÍNDICE DE PELIGRO ====================
 PONDERACIONES = {
-    "P_GEOLOGIA": 0.15,      
-    "P_GEOMORFOLOGIA": 0.15, 
-    "P_PENDIENTE": 0.55,     
-    "P_PPMAX": 0.20          
+    "P_GEOLOGIA": 0.20,      
+    "P_GEOMORFOLOGIA": 0.25, 
+    "P_PENDIENTE": 0.45,     
+    "P_PPMAX": 0.10          
 }
 # ===============================================================================
 
@@ -73,9 +76,8 @@ RUTA_DEPARTAMENTOS = f"{ruta_base}/DATA/MAPA DE UBICACION/DEPARTAMENTOS_DEL_PERU
 RUTA_OCEANO = f"{ruta_base}/DATA/MAPA DE UBICACION/OCEANO/Océano.shp"
 
 # PALETA DE COLORES PARA NIVELES DE PELIGRO
-COLORES_PELIGRO = ['#00FF00', '#FFFF00', '#FFA500', '#FF0000']
+COLORES_PELIGRO = ['#33A02C', '#FFFF00', '#FFA500', '#FF0000'] # Verde Oscuro (Baja), Amarillo (Media), Naranja (Alta), Rojo (Muy Alta)
 ETIQUETAS_PELIGRO = ['Baja', 'Media', 'Alta', 'Muy Alta']
-RANGOS_PELIGRO = [1.00, 2.00, 3.00, 4.00, 5.00]
 
 # ==================== NOMBRES DE COLUMNAS ====================
 COL_DPTO = 'NOMBDEP' 
@@ -84,7 +86,7 @@ COL_DIST = 'NOMBDIST'
 COL_CCPP = 'NOMB_CCPP' 
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-# 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS 
+# 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblados, ax, radio_offset=0.12):
@@ -471,18 +473,6 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
         spine.set_linewidth(1.2)
         spine.set_visible(True)
 
-def asignar_color_peligro(valor):
-    if 1.00 <= valor < 2.00:
-        return COLORES_PELIGRO[0] 
-    elif 2.00 <= valor < 3.00:
-        return COLORES_PELIGRO[1] 
-    elif 3.00 <= valor < 4.00:
-        return COLORES_PELIGRO[2] 
-    elif 4.00 <= valor <= 5.00:
-        return COLORES_PELIGRO[3] 
-    else:
-        return COLORES_PELIGRO[0]
-
 def obtener_rutas_capas(provincia_sel):
     provincia_upper = provincia_sel.upper()
     
@@ -510,7 +500,31 @@ def obtener_rutas_capas(provincia_sel):
     return rutas
     
 # ════════════════════════════════════════════════════════════════════════════════════
-# 🚀 FUNCIÓN PRINCIPAL DE GENERACIÓN DE MAPA (CORREGIDA CON PROPORCIONES MÁS COMPACTAS)
+# 🚨 FUNCIÓN DE ASIGNACIÓN DE COLOR MODIFICADA CON UMBRALES AGRESIVOS
+# ════════════════════════════════════════════════════════════════════════════════════
+def asignar_color_peligro(valor):
+    """
+    Asigna el color basado en el Índice de Peligro (valor), 
+    usando umbrales más agresivos para forzar más zonas rojas/naranjas.
+    """
+    if valor is None or pd.isna(valor):
+        return COLORES_PELIGRO[0] # Default
+
+    # 🚨 AJUSTE CRÍTICO: Umbrales [1.75, 2.50, 3.25]
+    if 1.00 <= valor < 1.75:
+        return COLORES_PELIGRO[0] # Verde Oscuro (Baja)
+    elif 1.75 <= valor < 2.50:
+        return COLORES_PELIGRO[1] # Amarillo (Media)
+    elif 2.50 <= valor < 3.25:
+        return COLORES_PELIGRO[2] # Naranja (Alta)
+    elif 3.25 <= valor <= 5.00:
+        return COLORES_PELIGRO[3] # Rojo (Muy Alta)
+    else:
+        return COLORES_PELIGRO[0]
+
+
+# ════════════════════════════════════════════════════════════════════════════════════
+# 🚀 FUNCIÓN PRINCIPAL DE GENERACIÓN DE MAPA (CON LÓGICA DE CLASIFICACIÓN CORREGIDA)
 # ════════════════════════════════════════════════════════════════════════════════════
 
 def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA", nombre_usuario=None):
@@ -666,17 +680,26 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
                 gdf_final['P_PPMAX'] * PONDERACIONES['P_PPMAX']
             )
 
-            bins = [1.00, 2.00, 3.00, 4.00, 4.01] 
-            gdf_final['NIVEL_PELIGRO'] = pd.cut(
+            # 5. CLASIFICACIÓN DE PELIGRO Y ASIGNACIÓN DE COLOR 
+            
+            # Usamos los bins agresivos para el texto, hasta 5.01 para incluir el max (5.00)
+            bins_agresivos = [1.00, 1.75, 2.50, 3.25, 5.01] 
+            
+            # Asignar la clasificación de texto (usando los bins agresivos)
+            gdf_final['NIVEL_PELIGRO_TEXTO'] = pd.cut(
                 gdf_final['INDICE_PELIGRO'], 
-                bins=bins, 
-                labels=[1, 2, 3, 4], 
+                bins=bins_agresivos, 
+                labels=ETIQUETAS_PELIGRO, # ['Baja', 'Media', 'Alta', 'Muy Alta']
                 right=False, 
                 include_lowest=True
-            ).astype(float)
+            ).astype(str)
             
-            gdf_final['COLOR_PELIGRO'] = gdf_final['NIVEL_PELIGRO'].apply(asignar_color_peligro)
-            print("   ✅ Cálculo del Índice y Nivel de Peligro completado.")
+            # 🚨 Asignar color usando la función modificada con umbrales agresivos.
+            gdf_final['COLOR_PELIGRO'] = gdf_final['INDICE_PELIGRO'].apply(asignar_color_peligro)
+
+            print(f"   ✅ Cálculo del Índice y Nivel de Peligro completado.")
+            print(f"   ⚠️ Lógica de color ajustada: Umbrales agresivos: [1.75, 2.50, 3.25] para forzar más Rojos/Naranjas.")
+
         else:
             print(f"❌ Error: Se esperaban 4 columnas de peso, se encontraron {len(columnas_peso)}. Abortando.")
             return None
@@ -783,6 +806,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
     ax_leyenda.axis('off')
     
     legend_handles = []
+    # Usar los colores y etiquetas definidos globalmente
     for color, label in zip(COLORES_PELIGRO, ETIQUETAS_PELIGRO):
         patch = Patch(facecolor=color, edgecolor='black', linewidth=0.5, label=label)
         legend_handles.append(patch)
@@ -804,12 +828,12 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         output_dir = os.path.join(ruta_base, "RESULTADOS", "MAPAS_DE_PELIGRO", provincia_upper, distrito_upper)
     
     os.makedirs(output_dir, exist_ok=True)
-    nombre_archivo = f"MAPA_PELIGRO_DESLIZAMIENTO_{distrito_upper}_{provincia_upper}_4P.png"
+    nombre_archivo = f"MAPA_PELIGRO_DESLIZAMIENTO_{distrito_upper}_{provincia_upper}_4P_AJUSTADO.png"
     ruta_guardado_final = os.path.join(output_dir, nombre_archivo)
     
     print(f"🖼️ Intentando ajustar y guardar el mapa en: {ruta_guardado_final}")
     
-    # 🚨 CORRECCIÓN CLAVE: Envolver tight_layout en un try/except para evitar cuelgues.
+    # CORRECCIÓN CLAVE: Envolver tight_layout en un try/except para evitar cuelgues.
     try:
         fig.tight_layout(rect=[0, 0.0, 1, 1]) 
         print("✅ tight_layout aplicado.")
@@ -826,7 +850,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
              raise IOError("El archivo no se escribió en disco a pesar de que savefig terminó sin excepción.")
         
         print("="*80)
-        print(f"✅ Mapa de peligro guardado exitosamente (Proporciones más compactas)")
+        print(f"✅ Mapa de peligro guardado exitosamente (Proporciones más compactas, Colores ajustados)")
         print(f"   📁 Ubicación: {ruta_guardado_final}")
         print("="*80 + "\n")
         return ruta_guardado_final
@@ -843,8 +867,8 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
 
 if __name__ == "__main__":
     # EJEMPLO DE USO 
-    distrito_ejemplo = "PIURA"
-    provincia_ejemplo = "PIURA"
+    distrito_ejemplo = "SECHURA" 
+    provincia_ejemplo = "SECHURA"
     departamento_ejemplo = "PIURA"
     
     # Nombre de usuario para la subcarpeta de guardado (cambie esto según sea necesario)

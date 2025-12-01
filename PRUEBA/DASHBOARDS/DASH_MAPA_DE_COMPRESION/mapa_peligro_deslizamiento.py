@@ -7,7 +7,10 @@ MODIFICACIONES IMPLEMENTADAS:
       dentro de 'mapa_ubicacion' (para tipo_mapa='provincia') al usar `gdf_context`.
 - 2. ✅ CORRECCIÓN DE GUARDADO (fig.savefig): Se elimina 'bbox_inches='tight'' y se maneja el error de 'tight_layout'
       para prevenir fallos silenciosos/cuelgues durante el renderizado final (causa del error 'Archivo no generado').
-- 3. ✅ Se mantienen las proporciones de layout más compactas.
+- 3. ✅ AJUSTE CRÍTICO DE LAYOUT (GRIDSPEC ANIDADO): Se implementa la estructura FINAL:
+      - Mapa Principal (arriba a la izquierda).
+      - 3 Ubicaciones apiladas (columna derecha completa).
+      - Pie de página dividido horizontalmente en 3 secciones: LOGO, MEMBRETE, LEYENDA.
 - 4. ✅ AJUSTE DE COLOR: Se cambia el Verde Lima por un Verde Oscuro (#33A02C) para mejor contraste en el nivel 'Baja' (1).
 - 5. 🚨 AJUSTE CRÍTICO DE CLASIFICACIÓN (FINAL): Se usa la función 'asignar_color_peligro' con umbrales ajustados 
       a [1.75, 2.50, 3.25] para convertir zonas Verdes/Amarillas en Rojas/Naranjas, respetando la estructura solicitada.
@@ -341,13 +344,13 @@ def add_membrete(ax, dpto, prov, dist, main_map_ax, fig_obj):
     ax.text(0 + padding, 0.5, "DPTO:", fontweight='bold', va='center', fontsize=font_size_small)
     ax.text(2.5 + padding, 0.5, "PROVINCIA:", fontweight='bold', va='center', fontsize=font_size_small)
     ax.text(5 + padding, 0.5, "DISTRITO:", fontweight='bold', va='center', fontsize=font_size_small)
-    ax.text(7.5 + padding, 0.5, "MAPA Nº", fontweight='bold', ha='left', va='center', fontsize=font_size_small)
+    ax.text(7.5 + padding, 0.5, "ESCALA", fontweight='bold', ha='left', va='center', fontsize=font_size_small) # Cambiado a ESCALA
     
     # Fila de Contenido (Y=0.17)
     ax.text(0 + padding, 0.17, info["DPTO"], va='center', fontsize=font_size_small)
     ax.text(2.5 + padding, 0.17, info["PROVINCIA"], va='center', fontsize=font_size_small)
     ax.text(5 + padding, 0.17, info["DISTRITO"], va='center', fontsize=font_size_small)
-    ax.text(7.5 + padding, 0.17, info["MAPA_N"], ha='left', va='center', fontsize=font_size_medium)
+    ax.text(7.5 + padding, 0.17, info["ESCALA"], ha='left', va='center', fontsize=font_size_medium) # Se muestra la escala numérica
 
 
 def grillado_utm_proyectado(ax, bbox, ndiv=8):
@@ -530,7 +533,7 @@ def asignar_color_peligro(valor):
 def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA", nombre_usuario=None):
     """
     Genera el mapa de peligro (susceptibilidad) para un distrito específico
-    combinando 4 capas. Implementa el layout 4x2 con proporciones ajustadas.
+    combinando 4 capas. Implementa el layout 2x2 con subgrids para una estructura compacta.
     """
     
     distrito_upper = distrito.upper()
@@ -719,26 +722,49 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
     except Exception as e:
         gdf_ccpp_dentro_proj = gpd.GeoDataFrame(geometry=[], crs=3857)
 
-    # 6. Generación del Mapa (LAYOUT 4x2 CON PROPORCIONES MÁS COMPACTAS)
+    # 6. Generación del Mapa (LAYOUT FINAL CORREGIDO: CON LOGO Y PIE TRIPARTITO)
     
-    # 🎯 Ajuste 1: Figura menos vertical. Aspecto (18 ancho, 14 alto)
-    fig = plt.figure(figsize=(18, 14)) 
+    # 🎯 Estructura: 2 filas x 2 columnas principales.
+    # Fila 0: Mapa Principal (izquierda) y Ubicaciones Dpto/Prov/Dist (derecha)
+    # Fila 1: Logo / Membrete / Leyenda (izquierda) y Ubicaciones (derecha)
     
-    # 🎯 Ajuste 2: Reducción extrema de la altura de la fila inferior (Membrete/Leyenda)
-    # Ratios de altura: [Mapa/Ubicación 1, Mapa/Ubicación 2, Mapa/Ubicación 3, Membrete/Leyenda]
-    gs = fig.add_gridspec(
-        4, 2, 
-        height_ratios=[1.2, 1.2, 1.2, 0.25],  # 0.25 es muy compacto
-        width_ratios=[2, 1]          
+    fig = plt.figure(figsize=(22, 16)) # Figura ajustada (más ancha)
+    
+    # Grid: 2 filas x 2 columnas principales
+    gs_main = fig.add_gridspec(
+        2, 2, 
+        height_ratios=[3, 0.6],  # Mapa grande arriba (3), pie muy compacto abajo (0.6)
+        width_ratios=[2.5, 1],   # Columna izq más ancha (Mapa/Pie), Columna der estrecha (Ubicaciones)
+        hspace=0.15, wspace=0.25
     )
     
-    # --- Asignación de Paneles ---
-    ax_mapa = fig.add_subplot(gs[0:3, 0])      
-    ax_membrete = fig.add_subplot(gs[3, 0])    
-    ax_loc_dpto = fig.add_subplot(gs[0, 1])    
-    ax_loc_prov = fig.add_subplot(gs[1, 1])    
-    ax_loc_dist = fig.add_subplot(gs[2, 1])    
-    ax_leyenda = fig.add_subplot(gs[3, 1])     
+    # --- Columna IZQUIERDA ---
+    # 1. Mapa principal (ocupa la celda superior izquierda)
+    ax_mapa = fig.add_subplot(gs_main[0, 0])
+    
+    # 2. Subdivisión de la fila inferior izquierda (Pie de página: Logo, Membrete, Leyenda horizontal)
+    gs_pie = gs_main[1, 0].subgridspec(
+        1, 3, 
+        width_ratios=[0.5, 2, 1],  # Logo pequeño (0.5), Membrete grande (2), Leyenda media (1)
+        wspace=0.15
+    )
+    
+    ax_logo = fig.add_subplot(gs_pie[0, 0])      
+    ax_membrete = fig.add_subplot(gs_pie[0, 1])  
+    ax_leyenda = fig.add_subplot(gs_pie[0, 2])   
+    
+    # --- Columna DERECHA ---
+    # 3. Subdivisión vertical para los 3 mapas de ubicación (ocupa toda la columna derecha)
+    gs_ubicacion = gs_main[:, 1].subgridspec(
+        3, 1, 
+        height_ratios=[1, 1, 1],
+        hspace=0.3
+    )
+    
+    # Asignación de las ubicaciones (Verticalmente apiladas)
+    ax_loc_dpto = fig.add_subplot(gs_ubicacion[0, 0])  
+    ax_loc_prov = fig.add_subplot(gs_ubicacion[1, 0])  
+    ax_loc_dist = fig.add_subplot(gs_ubicacion[2, 0])  
 
     
     # --- Dibujo del Mapa Principal (ax_mapa) ---
@@ -797,12 +823,21 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
                    gdf_provincias=gdf_provincias, gdf_oceano=gdf_oceano)
                    
 
-    # --- Membrete y Leyenda (Fila 3) ---
+    # --- Membrete y Leyenda (Fila Inferior - Pie de Página) ---
 
-    # 4. Dibujar el Membrete (ax_membrete) - Usa la función 'add_membrete' modificada
+    # 4. Dibujar el LOGO (ax_logo)
+    ax_logo.axis('off')
+    # Placeholder para el Logo, puede ser reemplazado por la imagen real
+    ax_logo.add_patch(Rectangle((0.05, 0.05), 0.9, 0.9, 
+                                facecolor='#D8D8D8', edgecolor='black', linewidth=1, 
+                                transform=ax_logo.transAxes, zorder=1))
+    ax_logo.text(0.5, 0.5, "LOGO\n(Aquí)", transform=ax_logo.transAxes, 
+                 fontsize=7, ha='center', va='center', fontweight='bold', color='black')
+    
+    # 5. Dibujar el Membrete (ax_membrete) - Utiliza el nuevo eje segmentado
     add_membrete(ax_membrete, departamento_upper, provincia_upper, distrito_upper, ax_mapa, fig)
     
-    # 5. Dibujar la Leyenda (ax_leyenda)
+    # 6. Dibujar la Leyenda (ax_leyenda)
     ax_leyenda.axis('off')
     
     legend_handles = []
@@ -815,9 +850,10 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
                          markerfacecolor='#006400', markersize=6, linestyle='None')
     legend_handles.append(ccpp_handle)
     
+    # Se ajusta la ubicación de la leyenda al nuevo eje (ax_leyenda)
     ax_leyenda.legend(handles=legend_handles, title="Nivel de Susceptibilidad", 
-                      loc='center left', frameon=True, fontsize=6.5, title_fontsize=8, 
-                      framealpha=0.9, fancybox=True, edgecolor='black', bbox_to_anchor=(0.0, 1.0)) 
+                      loc='center', frameon=True, fontsize=6.5, title_fontsize=8, 
+                      framealpha=0.9, fancybox=True, edgecolor='black') 
 
 
     # 7. Guardado del mapa
@@ -828,7 +864,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         output_dir = os.path.join(ruta_base, "RESULTADOS", "MAPAS_DE_PELIGRO", provincia_upper, distrito_upper)
     
     os.makedirs(output_dir, exist_ok=True)
-    nombre_archivo = f"MAPA_PELIGRO_DESLIZAMIENTO_{distrito_upper}_{provincia_upper}_4P_AJUSTADO.png"
+    nombre_archivo = f"MAPA_PELIGRO_DESLIZAMIENTO_{distrito_upper}_{provincia_upper}_4P_FINAL.png"
     ruta_guardado_final = os.path.join(output_dir, nombre_archivo)
     
     print(f"🖼️ Intentando ajustar y guardar el mapa en: {ruta_guardado_final}")
@@ -842,7 +878,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         pass 
         
     try:
-        # CORRECCIÓN CLAVE: Se remueve bbox_inches='tight' (que causó el error anterior)
+        # Se remueve bbox_inches='tight'
         fig.savefig(ruta_guardado_final, dpi=300) 
         plt.close(fig)
 
@@ -850,7 +886,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
              raise IOError("El archivo no se escribió en disco a pesar de que savefig terminó sin excepción.")
         
         print("="*80)
-        print(f"✅ Mapa de peligro guardado exitosamente (Proporciones más compactas, Colores ajustados)")
+        print(f"✅ Mapa de peligro guardado exitosamente (Estructura FINAL con Logo/Membrete/Leyenda en pie tripartito)")
         print(f"   📁 Ubicación: {ruta_guardado_final}")
         print("="*80 + "\n")
         return ruta_guardado_final

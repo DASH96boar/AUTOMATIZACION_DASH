@@ -4,6 +4,7 @@
 ✅ CORRECCIÓN CRÍTICA: Ahora retorna solo la ruta (no tupla)
 ✅ CORRECCIÓN DE RUTA: Usa el shapefile correcto de distritos
 ✅ CORRECCIÓN DE RUTAS DE ELEMENTOS EXPUESTOS (URBE, IE, CP, AGRICOLA)
+✅ AJUSTE DE Z-ORDER: La capa 'urbe' ahora tiene zorder=6.5 para verse sobre 'agricola'.
 """
 
 import geopandas as gpd
@@ -317,7 +318,7 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     
     elementos_cargados = {}
     
-    # 🎯 CORRECCIÓN: Rutas de elementos expuestos actualizadas
+    # 🎯 Rutas de elementos expuestos actualizadas
     ruta_agricola_fija = f"{ruta_base}/DATA/EXPUESTO/AGRICOLA/PIURA_AGRI/AGRICOLA_PIURA.shp"
     ruta_cp_fija = f"{ruta_base}/DATA/EXPUESTO/CP/PIURA_CP/CP_PIURA.shp"
     ruta_ie_fija = f"{ruta_base}/DATA/EXPUESTO/IE/PIURA_IE/IE_PIURA.shp"
@@ -452,8 +453,9 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
                             edgecolor='darkgreen', linewidth=0.3, alpha=0.6, zorder=5)
             
             elif elemento_tipo == 'urbe':
+                # AJUSTE DE ZORDER: Subimos el zorder a 6.5 para que quede sobre agricola (zorder=5) y via_vecinal (zorder=6)
                 gdf_elem.plot(ax=ax_main, color=COLORES_ELEMENTOS[elemento_tipo], 
-                            edgecolor='white', linewidth=0.1, alpha=0.9, zorder=5.5)
+                            edgecolor='white', linewidth=0.1, alpha=0.9, zorder=6.5)
             
             elif elemento_tipo == 'cp':
                 gdf_elem.plot(ax=ax_main, color=COLORES_ELEMENTOS[elemento_tipo], 

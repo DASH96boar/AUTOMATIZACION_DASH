@@ -64,9 +64,9 @@ RUTA_DISTRITOS = f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS DEL PERU/DISTRIT
 
 # ==================== PONDERACIONES PARA EL ÍNDICE DE PELIGRO ====================
 PONDERACIONES = {
-    "P_GEOLOGIA": 0.20,      
-    "P_GEOMORFOLOGIA": 0.25, 
-    "P_PENDIENTE": 0.45,     
+    "P_GEOLOGIA": 0.10,      
+    "P_GEOMORFOLOGIA": 0.15, 
+    "P_PENDIENTE": 0.65,     
     "P_PPMAX": 0.10          
 }
 # ===============================================================================

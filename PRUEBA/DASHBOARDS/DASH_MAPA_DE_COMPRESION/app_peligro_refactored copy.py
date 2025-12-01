@@ -1,4 +1,4 @@
-# Archivo: app_peligro_refactored.py - DASHBOARD COMPLETO REFACTORIZADO
+# Archivo: app_peligro_refactored.py - DASHBOARD COMPLETO REFACTORIZADO CON SISTEMA DUAL
 
 from dash import Dash, html, dcc, Input, Output, State
 import dash_bootstrap_components as dbc
@@ -9,9 +9,25 @@ import threading
 import uuid
 import geopandas as gpd
 
-# Importar funciones de generación
-from mapa_peligro import generar_mapa_peligro
-from elementos_expuestos import generar_mapa_elementos_expuestos
+# ==================== IMPORTACIONES DE GENERACIÓN ====================
+
+# 🌊 INUNDACIÓN PLUVIAL (Sistema Original)
+from mapa_peligro import generar_mapa_peligro as generar_mapa_peligro_inundacion
+
+# 🏔️ DESLIZAMIENTO PLUVIAL (Sistema Nuevo)
+from mapa_peligro_deslizamiento import generar_mapa_peligro_deslizamiento
+
+# 📍 ELEMENTOS EXPUESTOS - SISTEMA DUAL
+from elementos_expuestos import generar_mapa_elementos_expuestos as generar_elementos_inundacion
+
+# 🆕 IMPORTAR FUNCIÓN DE ELEMENTOS EXPUESTOS PARA DESLIZAMIENTO (PIURA)
+import sys
+sys.path.append('/workspaces/AUTOMATIZACION_DASH/PRUEBA/DASHBOARDS/DASH_MAPA_DE_COMPRESION')
+from elementos_expuestos_piura import generar_mapa_elementos_expuestos as generar_elementos_deslizamiento
+
+print("✅ Sistemas de generación cargados:")
+print("   - Inundación Pluvial: mapa_peligro.py + elementos_expuestos.py")
+print("   - Deslizamiento Pluvial: mapa_peligro_deslizamiento.py + elementos_expuestos_piura.py")
 
 # Diccionario global para rastrear procesos en segundo plano
 PROCESS_STATUS = {}
@@ -57,7 +73,7 @@ VALID_USERS = {'admin': 'admin', 'usuario': 'admin'}
 CHAT_STATES = {
     'inicio': {
         'mensaje': '¡Hola! 👋 Soy tu asistente virtual. Te guiaré paso a paso en el análisis de riesgo.',
-        'accion': '📝 Comencemos ingresando tu nombre completo como responsable del análisis.',
+        'accion': '🔍 Comencemos ingresando tu nombre completo como responsable del análisis.',
         'icono': 'bi-chat-dots'
     },
     'esperando_nombre': {
@@ -67,7 +83,7 @@ CHAT_STATES = {
     },
     'esperando_provincia': {
         'mensaje': '👍 Región seleccionada correctamente.',
-        'accion': '📍 Ahora selecciona la PROVINCIA específica.',
+        'accion': '🔍 Ahora selecciona la PROVINCIA específica.',
         'icono': 'bi-pin-map'
     },
     'esperando_distrito': {
@@ -77,7 +93,7 @@ CHAT_STATES = {
     },
     'ubicacion_completa': {
         'mensaje': '🎯 ¡Ubicación completa!',
-        'accion': '⚠️ Ahora selecciona el TIPO DE PELIGRO que deseas analizar (Inundación Pluvial disponible).',
+        'accion': '⚠️ Ahora selecciona el TIPO DE PELIGRO que deseas analizar (Inundación Pluvial o Deslizamiento Pluvial).',
         'icono': 'bi-exclamation-triangle'
     },
     'tipo_seleccionado': {
@@ -137,7 +153,14 @@ try:
     if not all([depa_data, prov_data, dist_data]): raise ValueError("Archivos SQL no encontrados.")
     departamentos = {d[0]: d[1] for d in depa_data}
     provincias = {p[0]: {'nombre': p[1], 'id_depa': p[2]} for p in prov_data}
-    distritos = {d[0]: {'nombre': d[1], 'id_prov': d[2]} for d in dist_data}
+    
+    distritos = {}
+    for d in dist_data:
+        distrito_id = d[0]
+        distrito_nombre = d[1]
+        provincia_id = d[2]
+        distritos[distrito_id] = {'nombre': distrito_nombre, 'id_prov': provincia_id}
+        
     PROVINCIAS_POR_DEPA, DISTRITOS_POR_PROV = {}, {}
     for prov_id, prov_info in provincias.items():
         if (depa_id := prov_info['id_depa']) in departamentos:
@@ -463,8 +486,7 @@ dashboard_layout = dbc.Container([
                             dbc.Button([
                                 html.I(className="bi bi-arrow-down-right-circle-fill"),
                                 "Deslizamiento Pluvial",
-                                html.Span("PRÓXIMAMENTE", className="badge-soon")
-                            ], id='btn-deslizamiento', className='btn-tipo', disabled=True, n_clicks=0),
+                            ], id='btn-deslizamiento pluvial', className='btn-tipo', disabled=False, n_clicks=0),
                             
                             dbc.Button([
                                 html.I(className="bi bi-snow2"),
@@ -596,10 +618,10 @@ def update_chat_state(user, depa, prov, dist, tipo_peligro, gen_status,
         new_state = 'elementos_completado'
     elif gen_status and gen_status.get('status') == 'processing':
         map_type = gen_status.get('map_type', 'peligro')
-        new_state = 'generando_elementos' if map_type == 'elementos' else 'generando_peligro'
+        new_state = 'generando_elementos' if 'elementos' in map_type else 'generando_peligro'
     elif gen_status and gen_status.get('status') == 'completed' and not peligro_down:
         map_type = gen_status.get('map_type', 'peligro')
-        if map_type == 'elementos':
+        if 'elementos' in map_type:
             new_state = 'elementos_completado'
         else:
             new_state = 'peligro_completado'
@@ -686,10 +708,10 @@ def display_user_nav(session_data):
         session_data.get('username', 'Usuario')
     ] if session_data and session_data.get('logged_in') else None
 
-# ==================== CALLBACK PRINCIPAL PARA BOTONES DE TIPO ====================
+# ==================== CALLBACK PRINCIPAL PARA BOTONES DE TIPO (SISTEMA DUAL) ====================
 @app.callback(
     [Output('btn-inundacion pluvial', 'className'),
-     Output('btn-deslizamiento', 'className'),
+     Output('btn-deslizamiento pluvial', 'className'),
      Output('btn-heladas', 'className'),
      Output('btn-elementos-expuestos', 'className'),
      Output('btn-elementos-expuestos', 'disabled'),
@@ -698,44 +720,76 @@ def display_user_nav(session_data):
      Output('tipo-locked', 'data'),
      Output('ubicacion-locked', 'data')],
     [Input('btn-inundacion pluvial', 'n_clicks'),
-     Input('btn-deslizamiento', 'n_clicks'),
+     Input('btn-deslizamiento pluvial', 'n_clicks'),
      Input('btn-heladas', 'n_clicks'),
      Input('btn-elementos-expuestos', 'n_clicks'),
      Input('peligro-downloaded', 'data'),
      Input('elementos-downloaded', 'data')],
-    State('tipo-locked', 'data'),
+    [State('tipo-locked', 'data'),
+     State('selected-tipo-peligro', 'data')],
     prevent_initial_call=False
 )
 def update_tipo_selection(inun_clicks, desli_clicks, heladas_clicks, elem_clicks,
-                          peligro_down, elem_down, is_locked):
+                          peligro_down, elem_down, is_locked, tipo_peligro_actual):
     from dash import callback_context
     
     if not callback_context.triggered:
+        # Estado inicial
         return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False, False)
     
     button_id = callback_context.triggered[0]['prop_id'].split('.')[0]
     
-    if button_id == 'btn-inundacion pluvial' and not is_locked:
-        return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                True, 'inundacion pluvial', False, True, True)
-    
+    # 🎯 FLUJO 1: PELIGRO DESCARGADO → ELEMENTOS EXPUESTOS DISPONIBLE
     if peligro_down and not elem_down:
         if button_id == 'btn-elementos-expuestos':
+            # ✅ Usuario seleccionó Elementos Expuestos después de descargar peligro
+            
+            if tipo_peligro_actual == 'deslizamiento pluvial':
+                # Mantener Deslizamiento activo + Activar Elementos
+                return ('btn-tipo', 'btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo btn-tipo-active',
+                        True, 'deslizamiento pluvial', True, True, True)
+            else:
+                # Mantener Inundación activa + Activar Elementos (por defecto)
+                return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
+                        True, 'inundacion pluvial', True, True, True)
+        else:
+            # Mostrar botón Elementos Expuestos disponible pero no seleccionado
+            if tipo_peligro_actual == 'deslizamiento pluvial':
+                return ('btn-tipo', 'btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo',
+                        False, 'deslizamiento pluvial', False, True, True)
+            else:
+                return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
+                        False, 'inundacion pluvial', False, True, True)
+
+    # 🎯 FLUJO 2: AMBOS MAPAS COMPLETADOS
+    if peligro_down and elem_down:
+        if tipo_peligro_actual == 'deslizamiento pluvial':
+            return ('btn-tipo', 'btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo btn-tipo-active',
+                    True, 'deslizamiento pluvial', True, True, True)
+        else:
             return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
-                    True, 'inundacion', True, True, True)
+                    True, 'inundacion pluvial', True, True, True)
+    
+    # 🎯 FLUJO 3: SELECCIÓN INICIAL DE PELIGRO
+    if not is_locked:
+        if button_id == 'btn-inundacion pluvial':
+            return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
+                    True, 'inundacion pluvial', False, True, True)
+        
+        elif button_id == 'btn-deslizamiento pluvial':
+            return ('btn-tipo', 'btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo',
+                    True, 'deslizamiento pluvial', False, True, True)
+    
+    # 🎯 FLUJO 4: ESTADO BLOQUEADO (durante generación)
+    if is_locked and not peligro_down:
+        if tipo_peligro_actual == 'deslizamiento pluvial':
+            return ('btn-tipo', 'btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo',
+                    True, 'deslizamiento pluvial', False, True, True)
         else:
             return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                    False, 'inundacion pluvial', False, True, True)
+                    True, 'inundacion pluvial', False, True, True)
     
-    if peligro_down and elem_down:
-        return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo btn-tipo-active',
-                True, 'inundacion pluvial', True, True, True)
-    
-    if is_locked:
-        elementos_disabled = not peligro_down or elem_down
-        return ('btn-tipo btn-tipo-active', 'btn-tipo', 'btn-tipo', 'btn-tipo',
-                elementos_disabled, 'inundacion pluvial', False, True, True)
-    
+    # Estado por defecto
     return ('btn-tipo', 'btn-tipo', 'btn-tipo', 'btn-tipo', True, None, False, False, False)
 
 # ==================== BLOQUEAR/DESBLOQUEAR UBICACIÓN ====================
@@ -773,7 +827,8 @@ def lock_unlock_location(tipo_peligro, reset_clicks, depa, prov, dist):
 )
 def update_provincias(departamento):
     if departamento: 
-        return [{'label': prov, 'value': prov} for prov in sorted(PROVINCIAS_POR_DEPA.get(departamento, []))], False, None
+        # 🚨 CORRECCIÓN SINTAXIS: Se envuelve la lista de opciones y los otros dos valores en una tupla
+        return ([{'label': prov, 'value': prov} for prov in sorted(PROVINCIAS_POR_DEPA.get(departamento, []))], False, None)
     return [], True, None
 
 @app.callback(
@@ -785,7 +840,8 @@ def update_provincias(departamento):
 )
 def update_distritos(provincia):
     if provincia: 
-        return [{'label': dist, 'value': dist} for dist in sorted(DISTRITOS_POR_PROV.get(provincia, []))], False, None
+        # 🚨 CORRECCIÓN SINTAXIS: Se envuelve la lista de opciones y los otros dos valores en una tupla
+        return ([{'label': dist, 'value': dist} for dist in sorted(DISTRITOS_POR_PROV.get(provincia, []))], False, None)
     return [], True, None
 
 # ==================== HABILITAR BOTÓN GENERAR ====================
@@ -851,8 +907,11 @@ def update_summary(user, depa, prov, dist, tipo_peligro, elem_exp):
             html.Span([html.Strong("Análisis:"), " Elementos Expuestos"])
         ]))
     elif tipo_peligro:
-        peligro_map = {'inundacion pluvial': ('Inundación', 'bi-droplet-fill')}
-        nombre, icono = peligro_map.get(tipo_peligro, ('Inundación', 'bi-droplet-fill'))
+        peligro_map = {
+            'inundacion pluvial': ('Inundación Pluvial', 'bi-droplet-fill'),
+            'deslizamiento pluvial': ('Deslizamiento Pluvial', 'bi-arrow-down-right-circle-fill')
+        }
+        nombre, icono = peligro_map.get(tipo_peligro, ('Peligro Desconocido', 'bi-exclamation-octagon'))
         items.append(html.Div(className='summary-item', children=[
             html.I(className=f"bi {icono}"),
             html.Span([html.Strong("Peligro:"), f" {nombre}"])
@@ -881,7 +940,7 @@ def update_summary(user, depa, prov, dist, tipo_peligro, elem_exp):
     
     return html.Div(items)
 
-# ==================== INICIAR GENERACIÓN ====================
+# ==================== INICIAR GENERACIÓN (SISTEMA DUAL) ====================
 @app.callback(
     [Output('loading-state', 'data', allow_duplicate=True),
      Output('generate-map-button', 'children', allow_duplicate=True),
@@ -901,10 +960,17 @@ def update_summary(user, depa, prov, dist, tipo_peligro, elem_exp):
 def start_generation(n_clicks, user, depa, prov, dist, tipo_peligro, elem_exp):
     process_id = str(uuid.uuid4())
     
+    # 🎯 DETERMINAR QUÉ TIPO DE MAPA GENERAR
     if elem_exp:
-        tipo_analisis = "ELEMENTOS EXPUESTOS"
-        map_type = "elementos"
+        # 🆕 ELEMENTOS EXPUESTOS: Detectar qué sistema usar
+        if tipo_peligro == 'deslizamiento pluvial':
+            tipo_analisis = "ELEMENTOS EXPUESTOS (DESLIZAMIENTO - SISTEMA PIURA)"
+            map_type = "elementos_deslizamiento"
+        else:
+            tipo_analisis = "ELEMENTOS EXPUESTOS (INUNDACIÓN - SISTEMA ORIGINAL)"
+            map_type = "elementos_inundacion"
     else:
+        # MAPA DE PELIGRO
         tipo_analisis = f"PELIGRO - {tipo_peligro.upper() if tipo_peligro else 'INUNDACION'}"
         map_type = "peligro"
     
@@ -914,6 +980,8 @@ def start_generation(n_clicks, user, depa, prov, dist, tipo_peligro, elem_exp):
     print(f"🆔 Process ID: {process_id}")
     print(f"📍 Ubicación: {dist}, {prov}, {depa}")
     print(f"👤 Usuario: {user}")
+    print(f"🎯 Tipo Peligro: {tipo_peligro}")
+    print(f"🗺️ Map Type: {map_type}")
     print(f"{'='*60}\n")
     
     PROCESS_STATUS[process_id] = {
@@ -926,20 +994,50 @@ def start_generation(n_clicks, user, depa, prov, dist, tipo_peligro, elem_exp):
         'provincia': prov,
         'distrito': dist,
         'map_type': map_type,
-        'tipo_analisis': tipo_analisis
+        'tipo_analisis': tipo_analisis,
+        'tipo_peligro': tipo_peligro
     }
     
-    def background_task():
+    # 🚨 CORRECCIÓN 1: La función anidada debe aceptar los argumentos para el multihilo.
+    def background_task(user, depa, prov, dist, tipo_peligro, map_type, process_id):
         try:
-            if map_type == "elementos":
-                print(f"🗺️ [{process_id}] Generando ELEMENTOS EXPUESTOS...")
+            ruta = None # Inicializar ruta
+            
+            # 🌊 ELEMENTOS EXPUESTOS - INUNDACIÓN (Sistema Original)
+            if map_type == "elementos_inundacion":
+                print(f"🗺️ [{process_id}] Generando ELEMENTOS EXPUESTOS (Sistema Original)...")
                 if gdf_distritos is None or gdf_provincias is None or gdf_departamentos is None:
                     raise Exception("GeoDataFrames no disponibles")
-                ruta = generar_mapa_elementos_expuestos(user, depa, prov, dist)
-            else:
-                print(f"⚠️ [{process_id}] Generando PELIGRO...")
-                ruta = generar_mapa_peligro(user, depa, prov, dist)
+                ruta = generar_elementos_inundacion(user, depa, prov, dist)
             
+            # 🏔️ ELEMENTOS EXPUESTOS - DESLIZAMIENTO (Sistema Piura)
+            elif map_type == "elementos_deslizamiento":
+                # 🚨 CORRECCIÓN CRÍTICA APLICADA: La función ahora recibe 'user'
+                print(f"🗺️ [{process_id}] Generando ELEMENTOS EXPUESTOS (Sistema Piura)...")
+                ruta = generar_elementos_deslizamiento(user, depa, prov, dist)
+            
+            # ⚠️ MAPA DE PELIGRO
+            else:
+                print(f"⚠️ [{process_id}] Generando PELIGRO: {tipo_peligro}...")
+                
+                if tipo_peligro == 'deslizamiento pluvial':
+                    ruta = generar_mapa_peligro_deslizamiento(
+                        distrito=dist, 
+                        provincia=prov, 
+                        departamento=depa,
+                        nombre_usuario=user
+                    )
+                else:
+                    # Inundación pluvial (por defecto)
+                    ruta = generar_mapa_peligro_inundacion(user, depa, prov, dist)
+            
+            # 🚨 CORRECCIÓN CRÍTICA PARA EL ERROR 'stat: path should be string... not tuple'
+            # Se verifica si el retorno es una tupla y se extrae el primer elemento, asumiendo que es la ruta.
+            if isinstance(ruta, tuple) and len(ruta) > 0:
+                print(f"⚠️ CORRECCIÓN APLICADA: La función devolvió una tupla. Extrayendo la ruta: {ruta[0]}")
+                ruta = ruta[0]
+            # 🚨 FIN DE LA CORRECCIÓN CRÍTICA
+
             tiempo = time.time() - PROCESS_STATUS[process_id]['start_time']
             
             if ruta and os.path.exists(ruta):
@@ -951,23 +1049,31 @@ def start_generation(n_clicks, user, depa, prov, dist, tipo_peligro, elem_exp):
                 print(f"✅ [{process_id}] COMPLETADO: {os.path.basename(ruta)} ({file_size:.2f} MB)")
             else:
                 PROCESS_STATUS[process_id]['status'] = 'error'
-                PROCESS_STATUS[process_id]['error'] = 'Archivo no generado'
+                PROCESS_STATUS[process_id]['error'] = 'Archivo no generado o ruta incorrecta'
+        
         except Exception as e:
             tiempo = time.time() - PROCESS_STATUS[process_id]['start_time']
             PROCESS_STATUS[process_id]['status'] = 'error'
             PROCESS_STATUS[process_id]['error'] = str(e)
             PROCESS_STATUS[process_id]['duration'] = tiempo
             print(f"❌ [{process_id}] ERROR: {e}")
+            import traceback
+            traceback.print_exc()
     
-    thread = threading.Thread(target=background_task, daemon=True)
+    # 🚨 CORRECCIÓN 2: Pasar los argumentos a la función a través de 'args'
+    thread = threading.Thread(
+        target=background_task, 
+        args=(user, depa, prov, dist, tipo_peligro, map_type, process_id), 
+        daemon=True
+    )
     thread.start()
     
     return (True,
             [html.I(className="bi bi-hourglass-split spin me-2"), f'Procesando {tipo_analisis}...'],
             True, False, process_id,
-            {'status': 'processing', 'process_id': process_id, 'tipo': tipo_analisis})
+            {'status': 'processing', 'process_id': process_id, 'tipo': tipo_analisis, 'map_type': map_type})
 
-# ==================== VERIFICAR ESTADO DEL PROCESO ====================
+# ==================== VERIFICAR ESTADO DEL PROCESO (ACTUALIZADO) ====================
 @app.callback(
     [Output('map-container', 'children'),
      Output('map-filepath-store', 'data'),
@@ -997,6 +1103,7 @@ def check_process(n_intervals, process_id):
     minutos = int(tiempo // 60)
     segundos = int(tiempo % 60)
     tipo_analisis = status.get('tipo_analisis', 'Análisis')
+    map_type = status.get('map_type', 'peligro')
     
     if current_status == 'processing':
         progress = dbc.Alert([
@@ -1006,16 +1113,10 @@ def check_process(n_intervals, process_id):
             ], className='text-center'),
             html.H5(f"Generando {tipo_analisis}", className="alert-heading text-center"),
             html.Hr(style={'opacity': '0.5'}),
-            html.Div([
-                html.Div(className='summary-item', children=[
-                    html.I(className="bi bi-clock"),
-                    html.Span([html.Strong("Tiempo:"), f" {minutos}m {segundos}s"])
-                ]),
-                html.Div(className='summary-item', children=[
-                    html.I(className="bi bi-geo-alt"),
-                    html.Span([html.Strong("Ubicación:"), f" {status['distrito']}, {status['provincia']}"])
-                ])
-            ], className='mt-3'),
+            html.Div(className='summary-item', children=[
+                html.I(className="bi bi-clock"),
+                html.Span([html.Strong("Tiempo:"), f" {minutos}m {segundos}s"])
+            ], style={'display': 'flex', 'alignItems': 'center', 'gap': '10px', 'justifyContent': 'center'}),
             html.P("Esta página se actualizará automáticamente...", 
                    className='text-center mt-3', style={'fontSize': '0.9rem', 'color': 'var(--text-secondary)'})
         ], color="info", className='border-0')
@@ -1032,12 +1133,12 @@ def check_process(n_intervals, process_id):
         duration = status['duration']
         dur_min = int(duration // 60)
         dur_sec = int(duration % 60)
-        map_type = status.get('map_type', 'peligro')
         
-        if map_type == 'peligro':
-            next_msg = "Descarga el mapa. Luego podrás generar Elementos Expuestos."
-        else:
+        # 🎯 DETERMINAR MENSAJE SEGÚN EL TIPO DE MAPA
+        if map_type in ['elementos_inundacion', 'elementos_deslizamiento']:
             next_msg = "Descarga el mapa. Luego podrás hacer un Nuevo Análisis."
+        else:
+            next_msg = "Descarga el mapa. Luego podrás generar Elementos Expuestos."
         
         success = html.Div([
             dbc.Alert([
@@ -1119,7 +1220,7 @@ def check_process(n_intervals, process_id):
                 [html.I(className="bi bi-download me-2"), 'Descargar'],
                 'w-100 mb-3 btn-info')
 
-# ==================== DESCARGAR Y ACTUALIZAR FLUJO ====================
+# ==================== DESCARGAR Y ACTUALIZAR FLUJO (ACTUALIZADO) ====================
 @app.callback(
     [Output('download-map-image', 'data'),
      Output('download-button', 'children', allow_duplicate=True),
@@ -1204,18 +1305,23 @@ def download_file(n_clicks, filepath, gen_status, peligro_down, elem_down):
             ], className='mt-3')
         ], color="success", className='border-0')
         
+        # 🎯 LÓGICA DE FLUJO SEGÚN TIPO DE MAPA
         if map_type == 'peligro':
+            # MAPA DE PELIGRO DESCARGADO → Habilitar Elementos Expuestos
             return (dcc.send_file(filepath),
                     [html.I(className="bi bi-check-circle me-2"), 'Descargado ✓'],
                     'w-100 mb-3 btn-downloaded', True,
                     True, False, True, False, True,
                     {'status': 'idle'}, success_msg)
-        else:
+        
+        elif map_type in ['elementos_inundacion', 'elementos_deslizamiento']:
+            # ELEMENTOS EXPUESTOS DESCARGADO → Habilitar Nuevo Análisis
             return (dcc.send_file(filepath),
                     [html.I(className="bi bi-check-circle me-2"), 'Descargado ✓'],
                     'w-100 mb-3 btn-downloaded', True,
                     True, True, False, True, True,
                     {'status': 'idle'}, success_msg)
+        
     except Exception as e:
         error_alert = dbc.Alert([
             html.Div([
@@ -1270,7 +1376,7 @@ def reset_all(n_clicks):
 
 if __name__ == '__main__':
     print(f"\n{'='*80}")
-    print("🚀 DASHBOARD DE COMPRENSIÓN DE RIESGO - VERSIÓN REFACTORIZADA".center(80))
+    print("🚀 DASHBOARD DE COMPRENSIÓN DE RIESGO - VERSIÓN REFACTORIZADA CON SISTEMA DUAL".center(80))
     print(f"{'='*80}")
     
     from werkzeug.serving import WSGIRequestHandler
@@ -1278,4 +1384,3 @@ if __name__ == '__main__':
     app.server.config['SEND_FILE_MAX_AGE_DEFAULT'] = 0
     
     app.run(debug=False, port=8052, threaded=True)
-    

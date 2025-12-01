@@ -827,7 +827,8 @@ def lock_unlock_location(tipo_peligro, reset_clicks, depa, prov, dist):
 )
 def update_provincias(departamento):
     if departamento: 
-        return [{'label': prov, 'value': prov} for prov in sorted(PROVINCIAS_POR_DEPA.get(departamento, []))], False, None
+        # 🚨 CORRECCIÓN SINTAXIS: Se envuelve la lista de opciones y los otros dos valores en una tupla
+        return ([{'label': prov, 'value': prov} for prov in sorted(PROVINCIAS_POR_DEPA.get(departamento, []))], False, None)
     return [], True, None
 
 @app.callback(
@@ -839,7 +840,8 @@ def update_provincias(departamento):
 )
 def update_distritos(provincia):
     if provincia: 
-        return [{'label': dist, 'value': dist} for dist in sorted(DISTRITOS_POR_PROV.get(provincia, []))], False, None
+        # 🚨 CORRECCIÓN SINTAXIS: Se envuelve la lista de opciones y los otros dos valores en una tupla
+        return ([{'label': dist, 'value': dist} for dist in sorted(DISTRITOS_POR_PROV.get(provincia, []))], False, None)
     return [], True, None
 
 # ==================== HABILITAR BOTÓN GENERAR ====================
@@ -996,8 +998,11 @@ def start_generation(n_clicks, user, depa, prov, dist, tipo_peligro, elem_exp):
         'tipo_peligro': tipo_peligro
     }
     
-    def background_task():
+    # 🚨 CORRECCIÓN 1: La función anidada debe aceptar los argumentos para el multihilo.
+    def background_task(user, depa, prov, dist, tipo_peligro, map_type, process_id):
         try:
+            ruta = None # Inicializar ruta
+            
             # 🌊 ELEMENTOS EXPUESTOS - INUNDACIÓN (Sistema Original)
             if map_type == "elementos_inundacion":
                 print(f"🗺️ [{process_id}] Generando ELEMENTOS EXPUESTOS (Sistema Original)...")
@@ -1007,6 +1012,7 @@ def start_generation(n_clicks, user, depa, prov, dist, tipo_peligro, elem_exp):
             
             # 🏔️ ELEMENTOS EXPUESTOS - DESLIZAMIENTO (Sistema Piura)
             elif map_type == "elementos_deslizamiento":
+                # 🚨 CORRECCIÓN CRÍTICA APLICADA: La función ahora recibe 'user'
                 print(f"🗺️ [{process_id}] Generando ELEMENTOS EXPUESTOS (Sistema Piura)...")
                 ruta = generar_elementos_deslizamiento(user, depa, prov, dist)
             
@@ -1025,6 +1031,13 @@ def start_generation(n_clicks, user, depa, prov, dist, tipo_peligro, elem_exp):
                     # Inundación pluvial (por defecto)
                     ruta = generar_mapa_peligro_inundacion(user, depa, prov, dist)
             
+            # 🚨 CORRECCIÓN CRÍTICA PARA EL ERROR 'stat: path should be string... not tuple'
+            # Se verifica si el retorno es una tupla y se extrae el primer elemento, asumiendo que es la ruta.
+            if isinstance(ruta, tuple) and len(ruta) > 0:
+                print(f"⚠️ CORRECCIÓN APLICADA: La función devolvió una tupla. Extrayendo la ruta: {ruta[0]}")
+                ruta = ruta[0]
+            # 🚨 FIN DE LA CORRECCIÓN CRÍTICA
+
             tiempo = time.time() - PROCESS_STATUS[process_id]['start_time']
             
             if ruta and os.path.exists(ruta):
@@ -1047,7 +1060,12 @@ def start_generation(n_clicks, user, depa, prov, dist, tipo_peligro, elem_exp):
             import traceback
             traceback.print_exc()
     
-    thread = threading.Thread(target=background_task, daemon=True)
+    # 🚨 CORRECCIÓN 2: Pasar los argumentos a la función a través de 'args'
+    thread = threading.Thread(
+        target=background_task, 
+        args=(user, depa, prov, dist, tipo_peligro, map_type, process_id), 
+        daemon=True
+    )
     thread.start()
     
     return (True,

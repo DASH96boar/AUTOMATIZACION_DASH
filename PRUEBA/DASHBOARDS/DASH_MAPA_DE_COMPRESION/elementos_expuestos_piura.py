@@ -28,11 +28,12 @@ import traceback
 ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 AMARILLO_CLARO = "#FFEE58"
 
+
 # RUTAS DE ELEMENTOS EXPUESTOS (BASES)
-RUTA_BASE_AGRICOLA = f"{ruta_base}/DATA/EXPUESTO/AGRICOLA"
-RUTA_BASE_CP = f"{ruta_base}/DATA/EXPUESTO/CP"
-RUTA_BASE_IE = f"{ruta_base}/DATA/EXPUESTO/IE"
-RUTA_BASE_URBE = f"{ruta_base}/DATA/EXPUESTO/URBE"
+RUTA_BASE_AGRICOLA = f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/ELEMENTOS_EXPUESTOS/AGRICOLA"
+RUTA_BASE_CP = f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/ELEMENTOS_EXPUESTOS/CP"
+RUTA_BASE_IE = f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/ELEMENTOS_EXPUESTOS/IE"
+RUTA_BASE_URBE = f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/ELEMENTOS_EXPUESTOS/URBE"
 RUTA_BASE_VIAS = f"{ruta_base}/DATA/MAPA DE UBICACION/VIAS"
 
 # PALETA DE COLORES
@@ -318,11 +319,12 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     
     elementos_cargados = {}
     
+
     # 🎯 Rutas de elementos expuestos actualizadas
-    ruta_agricola_fija = f"{ruta_base}/DATA/EXPUESTO/AGRICOLA/PIURA_AGRI/AGRICOLA_PIURA.shp"
-    ruta_cp_fija = f"{ruta_base}/DATA/EXPUESTO/CP/PIURA_CP/CP_PIURA.shp"
-    ruta_ie_fija = f"{ruta_base}/DATA/EXPUESTO/IE/PIURA_IE/IE_PIURA.shp"
-    ruta_urbe_fija = f"{ruta_base}/DATA/EXPUESTO/URBE/PIURA_URBE/piura_edificios_microsoft_COMPLETO.shp"
+    ruta_agricola_fija = f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/ELEMENTOS_EXPUESTOS/AGRICOLA/AGRICOLA_PIURA.shp"
+    ruta_cp_fija = f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/ELEMENTOS_EXPUESTOS/CP/CP_PIURA.shp"
+    ruta_ie_fija = f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/ELEMENTOS_EXPUESTOS/IE/IE_PIURA.shp"
+    ruta_urbe_fija = f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/ELEMENTOS_EXPUESTOS/URBE/piura_edificios_microsoft_COMPLETO.shp"
     
     gdf_agricola = cargar_y_preparar_shapefile(ruta_agricola_fija, "Agrícola")
     if gdf_agricola is not None: elementos_cargados['agricola'] = gdf_agricola

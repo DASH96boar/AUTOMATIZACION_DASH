@@ -37,21 +37,23 @@ import traceback
 ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 AMARILLO_CLARO = "#FFEE58"
 
+
 # 🔑 RUTAS DE CAPAS POR PROVINCIA
 CAPAS_POR_PROVINCIA = {
     "PIURA": {
-        "GEOLOGIA": f"{ruta_base}/DATA/PELIGRO/GEOLOGIA/geologia_piura_con_pesos.shp",
-        "GEOMORFOLOGIA": f"{ruta_base}/DATA/PELIGRO/GEOMORFOLOGIA/geomorfologia_piura_con_pesos.shp",
-        "PENDIENTE": f"{ruta_base}/DATA/PELIGRO/PENDIENTE/PIURA/pendientes_piura.shp",
-        "PPMAX": f"{ruta_base}/DATA/PELIGRO/PP_MAX/PIURA_TR50_Clasificacion.shp"
+        "GEOLOGIA": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/PIURA_PROVINCIA/GEOLOGIA/geologia_piura_con_pesos.shp",
+        "GEOMORFOLOGIA": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/PIURA_PROVINCIA/GEOMORFOLOGIA/geomorfologia_piura_con_pesos.shp",
+        "PENDIENTE": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/PENDIENTE/pendientes_piura.shp",
+        "PPMAX": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/PP_MAX/PIURA_TR50_Clasificacion.shp"
     },
     "SECHURA": {
-        "GEOLOGIA": f"{ruta_base}/DATA/PELIGRO/GEOLOGIA/geologia_sechura_con_pesos.shp",
-        "GEOMORFOLOGIA": f"{ruta_base}/DATA/PELIGRO/GEOMORFOLOGIA/geomorfologia_sechura_con_pesos.shp",
-        "PENDIENTE": f"{ruta_base}/DATA/PELIGRO/PENDIENTE/PIURA/pendientes_piura.shp",
-        "PPMAX": f"{ruta_base}/DATA/PELIGRO/PP_MAX/PIURA_TR50_Clasificacion.shp"
+        "GEOLOGIA": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/SECHURA_PROVINCIA/GEOLOGIA/geologia_sechura_con_pesos.shp",
+        "GEOMORFOLOGIA": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/SECHURA_PROVINCIA/GEOMORFOLOGIA/geomorfologia_sechura_con_pesos.shp",
+        "PENDIENTE": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/PENDIENTE/pendientes_piura.shp",
+        "PPMAX": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/PP_MAX/PIURA_TR50_Clasificacion.shp"
     }
 }
+
 
 # 🛠️ MAPEO DE COLUMNAS DE PESO ESPECÍFICAS (SEGÚN SU REQUERIMIENTO)
 PESO_COLUMNAS_MAP = {
@@ -731,41 +733,35 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
     fig = plt.figure(figsize=(22, 16)) # Figura ajustada (más ancha)
     
     # Grid: 2 filas x 2 columnas principales
+    # Grid principal: 2 filas x 2 columnas
     gs_main = fig.add_gridspec(
-        2, 2, 
-        height_ratios=[3, 0.6],  # Mapa grande arriba (3), pie muy compacto abajo (0.6)
-        width_ratios=[2.5, 1],   # Columna izq más ancha (Mapa/Pie), Columna der estrecha (Ubicaciones)
+        nrows=2, ncols=2, 
+        height_ratios=[3, 0.6],  # Mapa grande arriba (3), pie compacto abajo (0.6)
+        width_ratios=[2.5, 1],   # Columna izq ancha (2.5), Columna der estrecha (1)
         hspace=0.15, wspace=0.25
     )
     
     # --- Columna IZQUIERDA ---
-    # 1. Mapa principal (ocupa la celda superior izquierda)
+    # Mapa principal (arriba)
     ax_mapa = fig.add_subplot(gs_main[0, 0])
     
-    # 2. Subdivisión de la fila inferior izquierda (Pie de página: Logo, Membrete, Leyenda horizontal)
-    gs_pie = gs_main[1, 0].subgridspec(
-        1, 3, 
-        width_ratios=[0.5, 2, 1],  # Logo pequeño (0.5), Membrete grande (2), Leyenda media (1)
-        wspace=0.15
-    )
+    # Subdivisión de la fila inferior izquierda para Logo, Membrete, Leyenda
+    gs_pie = gs_main[1, 0].subgridspec(1, 3, 
+                                        width_ratios=[0.5, 2, 1],  # Logo pequeño, Membrete grande, Leyenda media
+                                        wspace=0.15)
     
-    ax_logo = fig.add_subplot(gs_pie[0, 0])      
-    ax_membrete = fig.add_subplot(gs_pie[0, 1])  
-    ax_leyenda = fig.add_subplot(gs_pie[0, 2])   
-    
+    ax_logo = fig.add_subplot(gs_pie[0, 0])      # Logo pequeño
+    ax_membrete = fig.add_subplot(gs_pie[0, 1])  # Membrete
+    ax_leyenda = fig.add_subplot(gs_pie[0, 2])   # Leyenda
     # --- Columna DERECHA ---
-    # 3. Subdivisión vertical para los 3 mapas de ubicación (ocupa toda la columna derecha)
-    gs_ubicacion = gs_main[:, 1].subgridspec(
-        3, 1, 
-        height_ratios=[1, 1, 1],
-        hspace=0.3
-    )
+    # Subdivisión vertical para los 3 mapas de ubicación
+    gs_ubicacion = gs_main[:, 1].subgridspec(3, 1, 
+                                              height_ratios=[1, 1, 1],
+                                              hspace=0.3)
     
-    # Asignación de las ubicaciones (Verticalmente apiladas)
-    ax_loc_dpto = fig.add_subplot(gs_ubicacion[0, 0])  
-    ax_loc_prov = fig.add_subplot(gs_ubicacion[1, 0])  
-    ax_loc_dist = fig.add_subplot(gs_ubicacion[2, 0])  
-
+    ax_loc_dpto = fig.add_subplot(gs_ubicacion[0, 0])  # Ubicación Nacional
+    ax_loc_prov = fig.add_subplot(gs_ubicacion[1, 0])  # Ubicación Departamental
+    ax_loc_dist = fig.add_subplot(gs_ubicacion[2, 0])  # Ubicación Provincial
     
     # --- Dibujo del Mapa Principal (ax_mapa) ---
     print("🛰️ Descargando imagen satelital...")

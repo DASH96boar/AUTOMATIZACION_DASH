@@ -941,6 +941,14 @@ def generate_and_save_map_callback(n_clicks, user_name, map_type, departamento, 
     ruta_guardado = None
     
     try:
+        # Validación básica de coherencia entre Departamento -> Provincia -> Distrito
+        if departamento and provincia:
+            if provincia not in PROVINCIAS_POR_DEPA.get(departamento, []):
+                raise ValueError(f"La provincia '{provincia}' no pertenece al departamento '{departamento}'. Verifique la selección.")
+        if provincia and distrito:
+            if distrito not in DISTRITOS_POR_PROV.get(provincia, []):
+                raise ValueError(f"El distrito '{distrito}' no pertenece a la provincia '{provincia}'. Verifique la selección.")
+
         if map_type == 'geografico':
             print(f"\n🗺️ Generando mapa geográfico para {distrito}...")
             ruta_guardado = generar_mapa_elementos_expuestos(user_name, departamento, provincia, distrito)
@@ -952,9 +960,9 @@ def generate_and_save_map_callback(n_clicks, user_name, map_type, departamento, 
             ruta_guardado = generar_mapa_climatica(user_name, departamento, provincia, distrito)
         elif map_type == 'pendientes':
             print(f"\n📐 Generando mapa de pendientes para {distrito}...")
-            ruta_pendientes = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/PENDIENTES/pendientes.tif"
-            if not os.path.exists(ruta_pendientes):
-                raise FileNotFoundError(f"Archivo de pendientes no encontrado: {ruta_pendientes}")
+            # No comprobar aquí la existencia de 'pendientes.tif' - la función
+            # `generar_mapa_pendientes` selecciona el raster departamental o crea
+            # un enlace/copia a 'pendientes.tif' si es necesario.
             ruta_guardado = generar_mapa_pendientes(user_name, departamento, provincia, distrito)
         elif map_type == 'vias':
             print(f"\n🛣️ Generando mapa de vías para {distrito}...")
@@ -1057,6 +1065,23 @@ def generate_and_save_map_callback(n_clicks, user_name, map_type, departamento, 
             'Generar Mapa'
         ]
         
+        return error_alert, None, False, button_text
+    except ValueError as e:
+        # Mensajes claros cuando la selección no es coherente
+        error_alert = dbc.Alert([
+            html.Div([
+                html.I(className="bi bi-exclamation-triangle-fill", style={'fontSize': '3rem', 'color': '#FB8C00'})
+            ], className='text-center mb-3'),
+            html.H4("Selección inválida", className="alert-heading text-center", style={'fontWeight': '700'}),
+            html.Hr(),
+            html.P(str(e), className='text-center')
+        ], color="warning", className='border-0')
+
+        button_text = [
+            html.I(className="bi bi-rocket-takeoff me-2"),
+            'Generar Mapa'
+        ]
+
         return error_alert, None, False, button_text
         
     except Exception as e:

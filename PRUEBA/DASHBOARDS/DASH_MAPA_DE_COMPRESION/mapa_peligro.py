@@ -1031,136 +1031,94 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     print("🌊 PASO 1: VERIFICANDO/GENERANDO SHAPEFILE DE DISTANCIA A RÍOS")
     print("="*80)
     
+    # 🆕 PRIMERO: DETECTAR EL DEM CORRESPONDIENTE AL DISTRITO (para uso consistente)
+    print(f"\n   🔍 Detectando DEM del distrito...")
+    ruta_dem_candidate = None
+    if os.path.isdir(ruta_dem_dir):
+        for f in os.listdir(ruta_dem_dir):
+            if f.lower().endswith('.tif'):
+                ruta_dem_candidate = os.path.join(ruta_dem_dir, f)
+                print(f"      ✅ DEM encontrado: {os.path.basename(ruta_dem_candidate)}")
+                break
+    elif os.path.isfile(ruta_dem_dir):
+        ruta_dem_candidate = ruta_dem_dir
+        print(f"      ✅ DEM encontrado: {os.path.basename(ruta_dem_candidate)}")
+    
+    if not ruta_dem_candidate:
+        print(f"      ⚠️ No se encontró DEM en: {ruta_dem_dir}")
+        print(f"      ℹ️ Se usará el DEM por defecto de CUSCO")
+    
     # Limpiar nombre del distrito para el archivo
     nombre_distrito_limpio = distrito_sel.replace(' ', '_').replace('/', '_').replace('\\', '_')
     nombre_archivo_rio = f"distancia_rio_{nombre_distrito_limpio}.shp"
     ruta_rios = os.path.join(carpeta_rios_usuario, nombre_archivo_rio)
     
-    print(f"   🔍 Buscando shapefile: {nombre_archivo_rio}")
-    print(f"   📁 Primero en carpeta del usuario: {carpeta_rios_usuario}")
+    print(f"\n   🔍 Verificando shapefile de ríos: {nombre_archivo_rio}")
+    print(f"   📁 Carpeta del usuario: {carpeta_rios_usuario}")
     
-    # Verificar si ya existe el shapefile en la carpeta del usuario actual
+    # 🆕 VERIFICAR SI YA EXISTE EL SHAPEFILE PARA EVITAR REGENERACIÓN INNECESARIA
     if os.path.exists(ruta_rios):
-        print(f"   ✅ ¡Shapefile encontrado en carpeta del usuario actual!")
-        print(f"   📍 Ubicación: {ruta_rios}")
-        print(f"   ⚡ Usando shapefile existente")
+        print(f"   ✅ Shapefile encontrado en carpeta del usuario actual")
+        print(f"   ⚡ Usando shapefile existente: {ruta_rios}")
+        ruta_rios_ya_existe = True
     else:
-        print(f"   ℹ️ No se encontró en la carpeta del usuario actual")
-        
-        # 🆕 BUSCAR EN TODAS LAS CARPETAS DE USUARIOS
-        print(f"   🔎 Buscando en carpetas de otros usuarios...")
-        carpeta_usuarios = os.path.join(ruta_base, "USUARIOS")
-        shapefile_encontrado = None
-        
-        if os.path.exists(carpeta_usuarios):
-            for usuario in os.listdir(carpeta_usuarios):
-                carpeta_usuario_otro = os.path.join(carpeta_usuarios, usuario)
-                carpeta_rios_otro = os.path.join(carpeta_usuario_otro, "DISTANCIA_RIOS")
-                ruta_rio_otro = os.path.join(carpeta_rios_otro, nombre_archivo_rio)
-                
-                if os.path.exists(ruta_rio_otro):
-                    shapefile_encontrado = ruta_rio_otro
-                    print(f"   ✅ ¡Shapefile encontrado en carpeta del usuario '{usuario}'!")
-                    print(f"   📍 Ubicación: {ruta_rio_otro}")
-                    break
-        
-        if shapefile_encontrado:
-            # 🆕 COPIAR SHAPEFILE Y ARCHIVOS ASOCIADOS
-            print(f"   📋 Copiando shapefile a la carpeta del usuario actual...")
-            try:
-                import shutil
-                
-                # Copiar todos los archivos del shapefile (.shp, .shx, .dbf, .prj, .cpg)
-                base_name = os.path.splitext(shapefile_encontrado)[0]
-                extensiones = ['.shp', '.shx', '.dbf', '.prj', '.cpg', '.sbn', '.sbx']
-                
-                archivos_copiados = 0
-                for ext in extensiones:
-                    archivo_origen = base_name + ext
-                    if os.path.exists(archivo_origen):
-                        archivo_destino = os.path.join(carpeta_rios_usuario, 
-                                                      os.path.basename(archivo_origen))
-                        shutil.copy2(archivo_origen, archivo_destino)
-                        archivos_copiados += 1
-                
-                print(f"   ✅ {archivos_copiados} archivos copiados exitosamente")
-                print(f"   📁 Destino: {carpeta_rios_usuario}")
-                
-                # Verificar que se copió correctamente
-                if os.path.exists(ruta_rios):
-                    print(f"   ✅ Shapefile listo para usar")
-                else:
-                    raise Exception("Error en la copia del shapefile")
-                    
-            except Exception as e:
-                print(f"   ⚠️ Error copiando shapefile: {e}")
-                print(f"   🔄 Generando shapefile desde cero...")
-                shapefile_encontrado = None  # Forzar regeneración
-        
-        if not shapefile_encontrado:
-            # 🆕 GENERAR SHAPEFILE DESDE CERO
-            print(f"   ℹ️ No se encontró shapefile en ninguna carpeta de usuario")
-            print(f"   🆕 Generando shapefile de ríos por primera vez...")
-            print(f"   ⏳ Este proceso puede tardar varios minutos...")
-            
-            # Si el departamento provee un DEM en ruta_dem_dir, buscar un .tif dentro
-            ruta_dem_candidate = None
-            if os.path.isdir(ruta_dem_dir):
-                for f in os.listdir(ruta_dem_dir):
-                    if f.lower().endswith('.tif'):
-                        ruta_dem_candidate = os.path.join(ruta_dem_dir, f)
-                        break
-            elif os.path.isfile(ruta_dem_dir):
-                ruta_dem_candidate = ruta_dem_dir
-
-            if ruta_dem_candidate:
-                # Auto-detect DEM size and enable fast mode if requested
-                if auto_fast and rasterio is not None:
-                    try:
-                        with rasterio.open(ruta_dem_candidate) as ds_check:
-                            pixels = ds_check.width * ds_check.height
-                        if pixels > 5_000_000 and not fast_mode:
-                            print(f"   ⚡ DEM muy grande ({pixels:,} píxeles) — activando fast_mode automáticamente")
-                            fast_mode = True
-                    except Exception as e:
-                        print(f"   ⚠️ No se pudo determinar el tamaño del DEM: {e}")
-                # Si se solicita fast_mode, crear DEM de menor resolución para acelerar
-                if fast_mode and rasterio is not None and not dry_run:
-                    dem_down = os.path.join(carpeta_usuario, "temp_hydro", "dem_downsampled.tif")
-                    print(f"   ⚡ fast_mode activado — creando DEM reducido (factor={downsample_factor}) para acelerar procesamiento...")
-                    down = downsample_dem(ruta_dem_candidate, dem_down, factor=downsample_factor)
-                    if down:
-                        globals()['RUTA_DEM_USUARIO'] = down
-                        print(f"   ✅ DEM reducido creado: {down}")
-                    else:
-                        globals()['RUTA_DEM_USUARIO'] = ruta_dem_candidate
-                        print(f"   ⚠️ No se creó DEM reducido — se usará DEM original: {ruta_dem_candidate}")
-                else:
-                    # Exportar DEM personalizado para uso interno por la función de generación
-                    globals()['RUTA_DEM_USUARIO'] = ruta_dem_candidate
-
-            if dry_run:
-                print("   🧭 dry_run activado — NO se generará shapefile de ríos. Validación completa de rutas:")
-                print(f"      - DEM (candidato): {ruta_dem_candidate}")
-                print(f"      - carpeta_rios_usuario: {carpeta_rios_usuario}")
-                # return early in dry_run mode
-                return {
-                    'status': 'dry_run',
-                    'dem': ruta_dem_candidate,
-                    'carpeta_rios_usuario': carpeta_rios_usuario
-                }
-
-            ruta_rios = generar_shapefile_rios_con_pesos(
-                gdf_distrito, 
-                carpeta_rios_usuario,
-                temp_folder=os.path.join(carpeta_usuario, "temp_hydro"),
-                nombre_distrito=distrito_sel
-            )
-            if not ruta_rios:
-                print("❌ Error generando shapefile de ríos")
-                return None
+        print(f"   ℹ️ No se encontró shapefile en la carpeta actual")
+        ruta_rios_ya_existe = False
     
-    print(f"\n   ✅ Shapefile de ríos listo: {os.path.basename(ruta_rios)}")
+    # GENERACIÓN DE RÍOS CON WHITEBOX (SIEMPRE PARA CONSISTENCIA)
+    if not ruta_rios_ya_existe or True:  # SIEMPRE generar con Whitebox
+        print(f"\n   🆕 Generando shapefile de ríos con Whitebox (consistente para todos los distritos)...")
+        print(f"   ⏳ Este proceso puede tardar varios minutos...")
+        
+        if ruta_dem_candidate:
+            # Auto-detect DEM size and enable fast mode if requested
+            if auto_fast and rasterio is not None:
+                try:
+                    with rasterio.open(ruta_dem_candidate) as ds_check:
+                        pixels = ds_check.width * ds_check.height
+                    if pixels > 5_000_000 and not fast_mode:
+                        print(f"   ⚡ DEM muy grande ({pixels:,} píxeles) — activando fast_mode automáticamente")
+                        fast_mode = True
+                except Exception as e:
+                    print(f"   ⚠️ No se pudo determinar el tamaño del DEM: {e}")
+            
+            # Si se solicita fast_mode, crear DEM de menor resolución para acelerar
+            if fast_mode and rasterio is not None and not dry_run:
+                dem_down = os.path.join(carpeta_usuario, "temp_hydro", "dem_downsampled.tif")
+                print(f"   ⚡ fast_mode activado — creando DEM reducido (factor={downsample_factor})...")
+                down = downsample_dem(ruta_dem_candidate, dem_down, factor=downsample_factor)
+                if down:
+                    globals()['RUTA_DEM_USUARIO'] = down
+                    print(f"   ✅ DEM reducido creado: {down}")
+                else:
+                    globals()['RUTA_DEM_USUARIO'] = ruta_dem_candidate
+                    print(f"   ⚠️ No se creó DEM reducido — se usará DEM original")
+            else:
+                # Usar DEM original
+                globals()['RUTA_DEM_USUARIO'] = ruta_dem_candidate
+        
+        if dry_run:
+            print("   🧭 dry_run activado — NO se generará shapefile ahora")
+            print(f"      - DEM: {ruta_dem_candidate}")
+            print(f"      - Destino: {carpeta_rios_usuario}")
+            return {
+                'status': 'dry_run',
+                'dem': ruta_dem_candidate,
+                'carpeta_rios_usuario': carpeta_rios_usuario
+            }
+        
+        ruta_rios = generar_shapefile_rios_con_pesos(
+            gdf_distrito, 
+            carpeta_rios_usuario,
+            temp_folder=os.path.join(carpeta_usuario, "temp_hydro"),
+            nombre_distrito=distrito_sel
+        )
+        
+        if not ruta_rios:
+            print("❌ Error generando shapefile de ríos")
+            return None
+        
+        print(f"\n   ✅ Shapefile de ríos generado: {os.path.basename(ruta_rios)}")
 
     # 🆕 CARGAR LAS CINCO CAPAS DE PELIGRO
     print("\n" + "="*80)
@@ -1210,73 +1168,31 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         gdf_ppmax = gpd.read_file(ruta_ppmax).to_crs(epsg=3857)
         print(f"      ✅ PP Máxima cargada: {len(gdf_ppmax)} registros")
         
-        # 4️⃣ 🆕 DISTANCIA A RÍOS (ya generado)
-        print(f"\n   🔍 Cargando capa de DISTANCIA A RÍOS (detección inteligente)...")
-
-        # buscar shapefile de ríos ya existente en diferentes ubicaciones para evitar procesamiento pesado
-        posibles_ruta_rio = []
-        # 1) shapefile en carpeta del usuario
-        posibles_ruta_rio.append(ruta_rios)
-        # 2) DEM folder (puede contener shapefiles de ríos vectorizados)
-        posibles_ruta_rio.append(os.path.join(ruta_dem_dir, 'distancia_rio.shp'))
-
-        # 3) buscar archivos con nombres comunes en la ruta del departamento/provincia
-        common_rio_patterns = ['rio', 'rios', 'stream', 'streams', 'rivers']
-        for root, _, files in os.walk(rutas_capa.get('RUTA_DEM', ruta_dem_dir)):
-            for f in files:
-                if f.lower().endswith('.shp') and any(p in f.lower() for p in common_rio_patterns):
-                    posibles_ruta_rio.append(os.path.join(root, f))
-
-        ruta_rios_encontrada = None
-        for p in posibles_ruta_rio:
-            if p and os.path.exists(p) and p.lower().endswith('.shp'):
-                ruta_rios_encontrada = p
-                print(f"      ✅ Shapefile de ríos detectado: {ruta_rios_encontrada}")
-                break
-
+        # 4️⃣ 🆕 DISTANCIA A RÍOS (YA GENERADO EN PASO 1)
+        print(f"\n   🔍 Cargando capa de DISTANCIA A RÍOS...")
         gdf_rios = None
-        if ruta_rios_encontrada:
-            try:
-                gdf_rios = gpd.read_file(ruta_rios_encontrada)
-            except Exception as e:
-                print(f"      ⚠️ Error leyendo shapefile detectado: {e}")
-
-        # si no hay shapefile y no estamos en dry_run -> generar
-        if gdf_rios is None:
-            print("      ℹ️ No se detectó shapefile de ríos existente.")
-            if dry_run:
-                print("      🧭 dry_run: no se generará la red de ríos ahora.")
-            else:
-                print("      🆕 Generando shapefile de ríos (esto puede tardar)...")
-                ruta_rios = generar_shapefile_rios_con_pesos(
-                    gdf_distrito,
-                    carpeta_rios_usuario,
-                    temp_folder=os.path.join(carpeta_usuario, 'temp_hydro'),
-                    nombre_distrito=distrito_sel
-                )
-
-                if ruta_rios and os.path.exists(ruta_rios):
-                    try:
-                        gdf_rios = gpd.read_file(ruta_rios)
-                    except Exception as e:
-                        print(f"      ⚠️ Error cargando shapefile recién generado: {e}")
         
-        # Si cargamos ríos, asegurar columna PESO_RIO; si no, marcaremos que no existe y lo omitiremos
-        if gdf_rios is not None:
-            if 'PESO_RIO' not in gdf_rios.columns:
-                posibles = [c for c in gdf_rios.columns if 'PESO' in c.upper()]
-                if posibles:
-                    chosen = posibles[0]
-                    print(f"      ⚠️ No existe 'PESO_RIO' — usando columna encontrada '{chosen}' como PESO_RIO")
-                    gdf_rios['PESO_RIO'] = gdf_rios[chosen]
-                else:
-                    # Si no hay columnas de peso, crear una por defecto (valor 1)
-                    print("      ⚠️ No se encontró columna de peso en ríos; se creará 'PESO_RIO' con valor por defecto = 1")
-                    gdf_rios['PESO_RIO'] = 1
-            print(f"      ✅ Distancia a Ríos cargada: {len(gdf_rios)} registros")
+        if os.path.exists(ruta_rios):
+            try:
+                gdf_rios = gpd.read_file(ruta_rios).to_crs(epsg=3857)
+                print(f"      ✅ Distancia a Ríos cargada: {len(gdf_rios)} registros")
+                
+                # Asegurar columna PESO_RIO
+                if 'PESO_RIO' not in gdf_rios.columns:
+                    posibles = [c for c in gdf_rios.columns if 'PESO' in c.upper()]
+                    if posibles:
+                        chosen = posibles[0]
+                        print(f"      ⚠️ No existe 'PESO_RIO' — usando columna encontrada '{chosen}' como PESO_RIO")
+                        gdf_rios['PESO_RIO'] = gdf_rios[chosen]
+                    else:
+                        print("      ⚠️ No se encontró columna de peso en ríos; se creará 'PESO_RIO' con valor por defecto = 1")
+                        gdf_rios['PESO_RIO'] = 1
+                
+                print(f"      📋 Columnas: {list(gdf_rios.columns)}")
+            except Exception as e:
+                print(f"      ⚠️ Error cargando ríos: {e}")
         else:
-            print("      ⚠️ No hay capa de ríos disponible — se omitirá el componente río en el cálculo de peligro")
-        print(f"      📋 Columnas: {list(gdf_rios.columns)}")
+            print(f"      ⚠️ No se encontró el archivo de ríos: {ruta_rios}")
         
         # 5️⃣ 🆕 GEOLOGÍA
         print(f"\n   🔍 Cargando capa de GEOLOGÍA...")
@@ -1324,7 +1240,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             return False
 
         # PENDIENTE: buscar 'PESO' con prioridad
-        if not ensure_weight_column(gdf_pendiente, 'PESO_PENDI', 'PENDIENTE', priority_names=['PESO']):
+        if not ensure_weight_column(gdf_pendiente, 'PESO', 'PENDIENTE', priority_names=['PESO']):
             raise ValueError(f"La columna de peso para PENDIENTE no existe. Columnas disponibles: {list(gdf_pendiente.columns)}")
 
         # GEOMORFOLOGÍA: buscar columnas de peso
@@ -1332,7 +1248,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             raise ValueError(f"La columna de peso para GEOMORFOLOGÍA no existe. Columnas disponibles: {list(gdf_geomorfo.columns)}")
 
         # PP MÁXIMA: buscar 'Nivel' con prioridad
-        if not ensure_weight_column(gdf_ppmax, 'PESO_PPMAX', 'PP MÁXIMA', priority_names=['Nivel']):
+        if not ensure_weight_column(gdf_ppmax, 'Nivel', 'PP MÁXIMA', priority_names=['Nivel']):
             # Si 'Nivel' no está, intentar extraer desde otras columnas categóricas comunes (Clase/Categoria)
             cat_candidates = [c for c in gdf_ppmax.columns if any(k in c.upper() for k in ['CLAS', 'CATEG', 'CAT', 'LEVEL', 'CLASS'])]
             if cat_candidates:
@@ -1348,14 +1264,14 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
                 numeric_vals = [try_num(v) for v in vals]
                 if all(v is not None for v in numeric_vals) and len(numeric_vals) > 0:
                     # usar los valores numéricos como pesos
-                    print(f"      ⚠️ Creando 'PESO_PPMAX' a partir de columna numérica '{cat_col}'")
-                    gdf_ppmax['PESO_PPMAX'] = gdf_ppmax[cat_col].astype(float)
+                    print(f"      ⚠️ Creando 'Nivel' a partir de columna numérica '{cat_col}'")
+                    gdf_ppmax['Nivel'] = gdf_ppmax[cat_col].astype(float)
                 else:
                     # mapear categorías ordenadas a 1..n
                     unique_sorted = sorted(vals, key=lambda x: str(x))
                     mapping = {v: i + 1 for i, v in enumerate(unique_sorted)}
-                    print(f"      ⚠️ Creando 'PESO_PPMAX' a partir de columna categórica '{cat_col}' con mapeo: {mapping}")
-                    gdf_ppmax['PESO_PPMAX'] = gdf_ppmax[cat_col].map(mapping).astype(float)
+                    print(f"      ⚠️ Creando 'Nivel' a partir de columna categórica '{cat_col}' con mapeo: {mapping}")
+                    gdf_ppmax['Nivel'] = gdf_ppmax[cat_col].map(mapping).astype(float)
             else:
                 raise ValueError(f"La columna de peso para PP MÁXIMA no existe. Columnas disponibles: {list(gdf_ppmax.columns)}")
 
@@ -1491,11 +1407,11 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         col_geol = None
         
         for col in gdf_peligro.columns:
-            if 'PESO_PENDI' in col:
+            if 'PESO' in col:
                 col_pendi = col
             elif 'PESO_GEOMO' in col:
                 col_geomo = col
-            elif 'PESO_PPMAX' in col:
+            elif 'Nivel' in col:
                 col_ppmax = col
             elif 'PESO_RIO' in col:
                 col_rio = col

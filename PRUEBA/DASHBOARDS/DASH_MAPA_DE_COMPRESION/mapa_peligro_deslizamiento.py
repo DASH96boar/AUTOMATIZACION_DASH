@@ -65,7 +65,7 @@ PESO_COLUMNAS_MAP = {
 
 # 🔑 RUTAS DE LÍMITES ADMINISTRATIVOS Y CENTROS POBLADOS (RUTAS CORREGIDAS)
 RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS_POBLADOS/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
-RUTA_DISTRITOS = f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS DEL PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
+RUTA_DISTRITOS = f"{ruta_base}/DATA/MAPA_DE_UBICACION/DISTRITOS_DEL_PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
 
 # ==================== PONDERACIONES PARA EL ÍNDICE DE PELIGRO ====================
 PONDERACIONES = {
@@ -76,9 +76,9 @@ PONDERACIONES = {
 }
 # ===============================================================================
 
-RUTA_PROVINCIAS = f"{ruta_base}/DATA/MAPA DE UBICACION/PROVINCIAS DEL PERU/PROVINCIAS_inei_geogpsperu_suyopomalia.shp"
-RUTA_DEPARTAMENTOS = f"{ruta_base}/DATA/MAPA DE UBICACION/DEPARTAMENTOS_DEL_PERU/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp"
-RUTA_OCEANO = f"{ruta_base}/DATA/MAPA DE UBICACION/OCEANO/Océano.shp"
+RUTA_PROVINCIAS = f"{ruta_base}/DATA/MAPA_DE_UBICACION/PROVINCIAS_DEL_PERU/PROVINCIAS_inei_geogpsperu_suyopomalia.shp"
+RUTA_DEPARTAMENTOS = f"{ruta_base}/DATA/MAPA_DE_UBICACION/DEPARTAMENTOS_DEL_PERU/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp"
+RUTA_OCEANO = f"{ruta_base}/DATA/MAPA_DE_UBICACION/OCEANO/Océano.shp"
 
 # PALETA DE COLORES PARA NIVELES DE PELIGRO
 COLORES_PELIGRO = ['#33A02C', '#FFFF00', '#FFA500', '#FF0000'] # Verde Oscuro (Baja), Amarillo (Media), Naranja (Alta), Rojo (Muy Alta)

@@ -180,45 +180,97 @@ print("\n📦 Cargando GeoDataFrames de límites administrativos...")
 ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 
 try:
-    ruta_shp_distritos = f"{ruta_base}/DATA/MAPA_DE_UBICACION/DISTRITOS_DEL_PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
-    ruta_shp_provincias = f"{ruta_base}/DATA/MAPA_DE_UBICACION/PROVINCIAS_DEL_PERU/PROVINCIAS_inei_geogpsperu_suyopomalia.shp"
-    ruta_shp_departamentos = f"{ruta_base}/DATA/MAPA_DE_UBICACION/DEPARTAMENTOS_DEL_PERU/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp"
-    
-    if os.path.exists(ruta_shp_distritos):
-        gdf_distritos = gpd.read_file(ruta_shp_distritos)
-        if gdf_distritos.crs is None:
-            gdf_distritos.set_crs(epsg=4326, inplace=True)
-        if gdf_distritos.crs.to_epsg() != 3857:
-            gdf_distritos = gdf_distritos.to_crs(epsg=3857)
-        print(f"   ✅ Distritos cargados: {len(gdf_distritos)} registros")
+    # Función helper para localizar shapefiles en rutas conocidas y buscar recursivamente
+    def find_shapefile(candidate_paths, search_keywords=None, base_search_dir=f"{ruta_base}/DATA"):
+        tried = []
+        # Primero probar rutas candidatas explícitas
+        for p in candidate_paths:
+            tried.append(p)
+            if os.path.exists(p):
+                return p, tried
+
+        # Si no se encontró, hacer búsqueda recursiva en base_search_dir por keywords
+        if search_keywords and os.path.exists(base_search_dir):
+            for root, dirs, files in os.walk(base_search_dir):
+                for f in files:
+                    if f.lower().endswith('.shp'):
+                        low = f.lower()
+                        for kw in search_keywords:
+                            if kw in low:
+                                full = os.path.join(root, f)
+                                tried.append(full)
+                                return full, tried
+
+        # Si sigue sin encontrar, devolver None con lista de intentos
+        return None, tried
+
+    # Rutas candidatas (las originales y variantes comunes)
+    cand_distritos = [
+        f"{ruta_base}/DATA/MAPA_DE_UBICACION/DISTRITOS_DEL_PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp",
+        f"{ruta_base}/DATA/DISTRITOS/distritos.shp",
+        f"{ruta_base}/DATA/DISTRITOS/distritos_inei.shp",
+    ]
+    cand_provincias = [
+        f"{ruta_base}/DATA/MAPA_DE_UBICACION/PROVINCIAS_DEL_PERU/PROVINCIAS_inei_geogpsperu_suyopomalia.shp",
+        f"{ruta_base}/DATA/PROVINCIAS/provincias.shp",
+    ]
+    cand_departamentos = [
+        f"{ruta_base}/DATA/MAPA_DE_UBICACION/DEPARTAMENTOS_DEL_PERU/DEPARTAMENTOS_inei_geogpsperu_suyopomalia.shp",
+        f"{ruta_base}/DATA/DEPARTAMENTOS/departamentos.shp",
+    ]
+
+    ruta_shp_distritos, tried_distritos = find_shapefile(cand_distritos, search_keywords=['distrit', 'distritos', 'district'])
+    ruta_shp_provincias, tried_provincias = find_shapefile(cand_provincias, search_keywords=['provinc', 'provincias', 'province'])
+    ruta_shp_departamentos, tried_departamentos = find_shapefile(cand_departamentos, search_keywords=['depart', 'departamentos', 'department'])
+
+    # Intentar leer cada shapefile si existe, con logs más informativos
+    if ruta_shp_distritos:
+        try:
+            gdf_distritos = gpd.read_file(ruta_shp_distritos)
+            if gdf_distritos.crs is None:
+                gdf_distritos.set_crs(epsg=4326, inplace=True)
+            if gdf_distritos.crs.to_epsg() != 3857:
+                gdf_distritos = gdf_distritos.to_crs(epsg=3857)
+            print(f"   ✅ Distritos cargados desde: {ruta_shp_distritos} ({len(gdf_distritos)} registros)")
+        except Exception as e:
+            gdf_distritos = None
+            print(f"   ❌ Error leyendo Distritos ({ruta_shp_distritos}): {e}")
     else:
         gdf_distritos = None
-        print("   ⚠️ Distritos: No encontrados")
-    
-    if os.path.exists(ruta_shp_provincias):
-        gdf_provincias = gpd.read_file(ruta_shp_provincias)
-        if gdf_provincias.crs is None:
-            gdf_provincias.set_crs(epsg=4326, inplace=True)
-        if gdf_provincias.crs.to_epsg() != 3857:
-            gdf_provincias = gdf_provincias.to_crs(epsg=3857)
-        print(f"   ✅ Provincias cargadas: {len(gdf_provincias)} registros")
+        print(f"   ⚠️ Distritos: No encontrados. Rutas intentadas: {tried_distritos}")
+
+    if ruta_shp_provincias:
+        try:
+            gdf_provincias = gpd.read_file(ruta_shp_provincias)
+            if gdf_provincias.crs is None:
+                gdf_provincias.set_crs(epsg=4326, inplace=True)
+            if gdf_provincias.crs.to_epsg() != 3857:
+                gdf_provincias = gdf_provincias.to_crs(epsg=3857)
+            print(f"   ✅ Provincias cargadas desde: {ruta_shp_provincias} ({len(gdf_provincias)} registros)")
+        except Exception as e:
+            gdf_provincias = None
+            print(f"   ❌ Error leyendo Provincias ({ruta_shp_provincias}): {e}")
     else:
         gdf_provincias = None
-        print("   ⚠️ Provincias: No encontradas")
-    
-    if os.path.exists(ruta_shp_departamentos):
-        gdf_departamentos = gpd.read_file(ruta_shp_departamentos)
-        if gdf_departamentos.crs is None:
-            gdf_departamentos.set_crs(epsg=4326, inplace=True)
-        if gdf_departamentos.crs.to_epsg() != 3857:
-            gdf_departamentos = gdf_departamentos.to_crs(epsg=3857)
-        print(f"   ✅ Departamentos cargados: {len(gdf_departamentos)} registros")
+        print(f"   ⚠️ Provincias: No encontradas. Rutas intentadas: {tried_provincias}")
+
+    if ruta_shp_departamentos:
+        try:
+            gdf_departamentos = gpd.read_file(ruta_shp_departamentos)
+            if gdf_departamentos.crs is None:
+                gdf_departamentos.set_crs(epsg=4326, inplace=True)
+            if gdf_departamentos.crs.to_epsg() != 3857:
+                gdf_departamentos = gdf_departamentos.to_crs(epsg=3857)
+            print(f"   ✅ Departamentos cargados desde: {ruta_shp_departamentos} ({len(gdf_departamentos)} registros)")
+        except Exception as e:
+            gdf_departamentos = None
+            print(f"   ❌ Error leyendo Departamentos ({ruta_shp_departamentos}): {e}")
     else:
         gdf_departamentos = None
-        print("   ⚠️ Departamentos: No encontrados")
-    
+        print(f"   ⚠️ Departamentos: No encontrados. Rutas intentadas: {tried_departamentos}")
+
     if gdf_distritos is None or gdf_provincias is None or gdf_departamentos is None:
-        print("\n⚠️ ADVERTENCIA: Algunos GeoDataFrames no se pudieron cargar")
+        print("\n⚠️ ADVERTENCIA: Algunos GeoDataFrames no se pudieron cargar. Revisar rutas y archivos .shp en la carpeta DATA.")
         
 except Exception as e:
     print(f"\n❌ Error cargando GeoDataFrames: {e}")

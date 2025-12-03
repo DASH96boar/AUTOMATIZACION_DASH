@@ -6,7 +6,7 @@ import re
 import os
 
 # Importamos la lógica de los diferentes tipos de mapas
-from geografica_final import generar_mapa_final
+from geografica_final import generar_mapa_elementos_expuestos
 from geomorfologia_final import generar_mapa_geomorfologia
 from climatica_final import generar_mapa_climatica
 from poblacion_final import generar_mapa_poblacion
@@ -943,7 +943,7 @@ def generate_and_save_map_callback(n_clicks, user_name, map_type, departamento, 
     try:
         if map_type == 'geografico':
             print(f"\n🗺️ Generando mapa geográfico para {distrito}...")
-            ruta_guardado = generar_mapa_final(user_name, departamento, provincia, distrito)
+            ruta_guardado = generar_mapa_elementos_expuestos(user_name, departamento, provincia, distrito)
         elif map_type == 'geomorfologia':
             print(f"\n🌄 Generando mapa de geomorfología para {distrito}...")
             ruta_guardado = generar_mapa_geomorfologia(user_name, departamento, provincia, distrito)

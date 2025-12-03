@@ -33,7 +33,7 @@ RUTA_BASE_AGRICOLA = f"{ruta_base}/DATA/EXPUESTO/AGRICOLA"
 RUTA_BASE_CP = f"{ruta_base}/DATA/EXPUESTO/CP"
 RUTA_BASE_IE = f"{ruta_base}/DATA/EXPUESTO/IE"
 RUTA_BASE_URBE = f"{ruta_base}/DATA/EXPUESTO/URBE"
-RUTA_BASE_VIAS = f"{ruta_base}/DATA/MAPA DE UBICACION/VIAS"
+RUTA_BASE_VIAS = f"{ruta_base}/DATA/MAPA_DE_UBICACION/VIAS"
 
 # PALETA DE COLORES
 COLORES_ELEMENTOS = {
@@ -245,7 +245,7 @@ def generar_mapa_elementos_expuestos(nombre_usuario, departamento_sel, provincia
     print("\n📦 Cargando límites administrativos...")
     
     # 🎯 Usar la ruta correcta del shapefile de distritos
-    ruta_distritos_correcta = f"{ruta_base}/DATA/MAPA DE UBICACION/DISTRITOS DEL PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
+    ruta_distritos_correcta = f"{ruta_base}/DATA/MAPA_DE_UBICACION/DISTRITOS_DEL_PERU/DISTRITOS_inei_geogpsperu_suyopomalia.shp"
     
     if not os.path.exists(ruta_distritos_correcta):
         print(f"❌ ERROR CRÍTICO: Shapefile de distritos no encontrado en:")

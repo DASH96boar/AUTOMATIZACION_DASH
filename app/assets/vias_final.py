@@ -24,7 +24,7 @@ AMARILLO_CLARO = "#FFEE58"
 # ════════════════════════════════════════════════════════════════════════
 def cargar_rios():
     """Carga el shapefile de ríos"""
-    ruta_directa = f"{ruta_base}/DATA/MAPA DE UBICACION/RIOS/rios_lineal_idep_ign_100k_geogpsperu.shp"
+    ruta_directa = f"{ruta_base}/DATA/MAPA_DE_UBICACION/RIOS/rios_lineal_idep_ign_100k_geogpsperu.shp"
     
     if os.path.exists(ruta_directa):
         try:
@@ -46,7 +46,7 @@ def cargar_rios():
 # ════════════════════════════════════════════════════════════════════════
 def cargar_vias():
     """Carga los shapefiles de vías (nacional, departamental, vecinal)"""
-    base_vias = f"{ruta_base}/DATA/MAPA DE UBICACION/VIAS"
+    base_vias = f"{ruta_base}/DATA/MAPA_DE_UBICACION/VIAS"
     
     vias = {
         'nacional': None,
@@ -360,8 +360,8 @@ def generar_mapa_vias(nombre_usuario, departamento_sel, provincia_sel, distrito_
     gdf_distritos = cargar_shapefile("distrito", "Distritos del Perú")
     
     try:
-        gdf_paises = gpd.read_file(f"{ruta_base}/DATA/MAPA DE UBICACION/PAISES DE SUDAMERICA/Sudamérica.shp").to_crs(3857)
-        gdf_oceano = gpd.read_file(f"{ruta_base}/DATA/MAPA DE UBICACION/OCEANO/Océano.shp").to_crs(3857)
+        gdf_paises = gpd.read_file(f"{ruta_base}/DATA/MAPA_DE_UBICACION/PAISES_DE_SUDAMERICA/Sudamérica.shp").to_crs(3857)
+        gdf_oceano = gpd.read_file(f"{ruta_base}/DATA/MAPA_DE_UBICACION/OCEANO/Océano.shp").to_crs(3857)
     except Exception as e:
         print(f"❌ Error cargando shapefiles de Países u Océano: {e}")
         gdf_paises = None

@@ -216,8 +216,8 @@ def generar_mapa_climatica(nombre_usuario, departamento_sel, provincia_sel, dist
     gdf_distritos = cargar_shapefile("distrito", "Distritos del Perú")
 
     try:
-        gdf_paises = gpd.read_file(f"{ruta_base}/DATA/MAPA DE UBICACION/PAISES DE SUDAMERICA/Sudamérica.shp").to_crs(3857)
-        gdf_oceano = gpd.read_file(f"{ruta_base}/DATA/MAPA DE UBICACION/OCEANO/Océano.shp").to_crs(3857)
+        gdf_paises = gpd.read_file(f"{ruta_base}/DATA/MAPA_DE_UBICACION/PAISES_DE_SUDAMERICA/Sudamérica.shp").to_crs(3857)
+        gdf_oceano = gpd.read_file(f"{ruta_base}/DATA/MAPA_DE_UBICACION/OCEANO/Océano.shp").to_crs(3857)
     except Exception as e:
         print(f"❌ Error cargando shapefiles de Paises u Océano: {e}")
         gdf_paises = None

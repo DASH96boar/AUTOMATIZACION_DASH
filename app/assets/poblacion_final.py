@@ -46,7 +46,7 @@ def cargar_centros_poblados():
 # ════════════════════════════════════════════════════════════════════════
 def cargar_rios():
     """Carga el shapefile de ríos desde ruta directa"""
-    ruta_directa = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/MAPA DE UBICACION/RIOS/rios_lineal_idep_ign_100k_geogpsperu.shp"
+    ruta_directa = "/workspaces/AUTOMATIZACION_DASH/PRUEBA/DATA/MAPA_DE_UBICACION/RIOS/rios_lineal_idep_ign_100k_geogpsperu.shp"
     
     if os.path.exists(ruta_directa):
         try:
@@ -76,9 +76,9 @@ def cargar_vias():
     }
 
     rutas = {
-        'nacional': f"{ruta_base}/DATA/MAPA DE UBICACION/VIAS/VIA NACIONAL/red_vial_nacional_dic18.shp",
-        'departamental': f"{ruta_base}/DATA/MAPA DE UBICACION/VIAS/VIA DEPARTAMENTAL/red_vial_departamental_dic18.shp",
-        'vecinal': f"{ruta_base}/DATA/MAPA DE UBICACION/VIAS/VIA VECINAL/red_vial_vecinal_dic18.shp"
+        'nacional': f"{ruta_base}/DATA/MAPA_DE_UBICACION/VIAS/VIA_NACIONAL/red_vial_nacional_dic18.shp",
+        'departamental': f"{ruta_base}/DATA/MAPA_DE_UBICACION/VIAS/VIA_DEPARTAMENTAL/red_vial_departamental_dic18.shp",
+        'vecinal': f"{ruta_base}/DATA/MAPA_DE_UBICACION/VIAS/VIA_VECINAL/red_vial_vecinal_dic18.shp"
     }
 
     for tipo, ruta in rutas.items():
@@ -375,8 +375,8 @@ def generar_mapa_poblacion(nombre_usuario, departamento_sel, provincia_sel, dist
     gdf_distritos = cargar_shapefile("distrito", "Distritos del Perú")
 
     try:
-        gdf_paises = gpd.read_file(f"{ruta_base}/DATA/MAPA DE UBICACION/PAISES DE SUDAMERICA/Sudamérica.shp").to_crs(3857)
-        gdf_oceano = gpd.read_file(f"{ruta_base}/DATA/MAPA DE UBICACION/OCEANO/Océano.shp").to_crs(3857)
+        gdf_paises = gpd.read_file(f"{ruta_base}/DATA/MAPA_DE_UBICACION/PAISES_DE_SUDAMERICA/Sudamérica.shp").to_crs(3857)
+        gdf_oceano = gpd.read_file(f"{ruta_base}/DATA/MAPA_DE_UBICACION/OCEANO/Océano.shp").to_crs(3857)
     except Exception as e:
         print(f"❌ Error cargando shapefiles de Países u Océano: {e}")
         gdf_paises = None

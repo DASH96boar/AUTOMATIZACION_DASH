@@ -55,9 +55,9 @@ def cargar_vias():
     }
     
     rutas = {
-        'nacional': f"{base_vias}/VIA NACIONAL/red_vial_nacional_dic18.shp",
-        'departamental': f"{base_vias}/VIA DEPARTAMENTAL/red_vial_departamental_dic18.shp",
-        'vecinal': f"{base_vias}/VIA VECINAL/red_vial_vecinal_dic18.shp"
+        'nacional': f"{base_vias}/VIA_NACIONAL/red_vial_nacional_dic18.shp",
+        'departamental': f"{base_vias}/VIA_DEPARTAMENTAL/red_vial_departamental_dic18.shp",
+        'vecinal': f"{base_vias}/VIA_VECINAL/red_vial_vecinal_dic18.shp"
     }
     
     for tipo, ruta in rutas.items():

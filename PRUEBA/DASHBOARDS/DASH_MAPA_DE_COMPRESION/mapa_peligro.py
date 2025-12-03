@@ -255,36 +255,45 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
             # Guardar la posición final de esta etiqueta
             posiciones_etiquetas.append((x_label, y_label))
             
-            # 🆕 DIBUJAR LÍNEA BLANCA GRUESA desde el punto hasta la etiqueta
-            ax.plot(
-                [x_orig, x_label],
-                [y_orig, y_label],
-                'w-',  # Línea BLANCA sólida
-                linewidth=0.8,  # MÁS GRUESA (antes era 0.45)
-                alpha=0.95,
-                zorder=5
-            )
-            
-            # Agregar punto pequeño en la ubicación original (dentro del distrito)
-            ax.plot(x_orig, y_orig, 'o', color='#006400', markersize=4, zorder=6)
-            
-            # Agregar etiqueta con fondo FUERA del distrito
-            ax.text(
-                x_label, y_label,
-                nombre,
-                fontsize=6.2,  # Ligeramente más grande
-                fontweight='bold',
-                ha='center',
-                va='center',
-                bbox=dict(
-                    boxstyle='round,pad=0.35',
-                    facecolor='white',
-                    edgecolor='black',
-                    alpha=0.8,
-                    linewidth=0.6
-                ),
-                zorder=8
-            )
+            # Intentar ubicar la etiqueta DENTRO del polígono si el punto está bien ubicado
+            etiqueta_colocada_dentro = False
+            try:
+                if distrito_merged.contains(punto):
+                    # Colocar etiqueta ligeramente desplazada respecto al punto (dentro)
+                    shift = escala * 0.01
+                    x_label_in = x_orig + dx_norm * shift
+                    y_label_in = y_orig + dy_norm * shift
+                    # Verificar solapamiento con etiquetas previas
+                    collision = any(np.sqrt((x_label_in - px)**2 + (y_label_in - py)**2) < distancia_minima_entre_etiquetas for px, py in posiciones_etiquetas)
+                    if not collision:
+                        posiciones_etiquetas.append((x_label_in, y_label_in))
+                        ax.plot(x_orig, y_orig, 'o', color='#006400', markersize=3.5, zorder=6)
+                        ax.text(
+                            x_label_in, y_label_in, nombre,
+                            fontsize=6.0, fontweight='bold', ha='left', va='center',
+                            bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='black', alpha=0.85, linewidth=0.5),
+                            zorder=8
+                        )
+                        etiqueta_colocada_dentro = True
+            except Exception:
+                etiqueta_colocada_dentro = False
+
+            if not etiqueta_colocada_dentro:
+                # Dibujar línea fina y más corta desde el punto hasta la etiqueta externa
+                # Reducir grosor y longitud para evitar exceso de cruces
+                short_factor = 0.7
+                x_label_short = punto_limite.x + dx_norm * (offset_perpendicular * short_factor)
+                y_label_short = punto_limite.y + dy_norm * (offset_perpendicular * short_factor)
+
+                ax.plot([x_orig, x_label_short], [y_orig, y_label_short], color='white', linewidth=0.5, alpha=0.9, zorder=5)
+                ax.plot(x_orig, y_orig, 'o', color='#006400', markersize=3.5, zorder=6)
+                posiciones_etiquetas.append((x_label_short, y_label_short))
+                ax.text(
+                    x_label_short, y_label_short, nombre,
+                    fontsize=6.0, fontweight='bold', ha='center', va='center',
+                    bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='black', alpha=0.85, linewidth=0.5),
+                    zorder=8
+                )
         except Exception as e:
             continue
 
@@ -430,20 +439,93 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
             else:
                 print(f"      ⚡ Usando flow_acc existente")
             
-            threshold = UMBRALES_RIOS[INTENSIDAD_RIOS]
-            print(f"      [2.4/4] Extrayendo red de ríos (umbral: {threshold} celdas)...")
-            if not os.path.exists(streams_raster):
-                wbt.extract_streams(flow_acc, streams_raster, threshold)
-                print(f"      ✅ Red de ríos extraída")
-            else:
-                print(f"      ⚡ Usando streams_raster existente")
-            
-            print(f"      [2.5/4] Vectorizando red de ríos...")
-            if not os.path.exists(streams_vector):
-                wbt.raster_streams_to_vector(streams_raster, flow_dir, streams_vector)
-                print(f"      ✅ Red de ríos vectorizada")
-            else:
-                print(f"      ⚡ Usando streams_vector existente")
+            threshold_default = int(UMBRALES_RIOS.get(INTENSIDAD_RIOS, 1500))
+            print(f"      [2.4/4] Extrayendo red de ríos (umbral inicial: {threshold_default} celdas)...")
+
+            # Intentar varios umbrales si la vectorización resulta vacía
+            tried_thresholds = []
+            success_vectorized = False
+            candidate_thresholds = [threshold_default, max(int(threshold_default/2), 1), max(int(threshold_default/5), 1), 50, 10]
+
+            for th in candidate_thresholds:
+                if th in tried_thresholds:
+                    continue
+                tried_thresholds.append(th)
+                try:
+                    print(f"         → Probando umbral = {th} ...")
+                    # extraer streams raster
+                    if not os.path.exists(streams_raster):
+                        wbt.extract_streams(flow_acc, streams_raster, th)
+                    else:
+                        # si ya existe, regenerarlo para este intento
+                        try:
+                            os.remove(streams_raster)
+                        except Exception:
+                            pass
+                        wbt.extract_streams(flow_acc, streams_raster, th)
+
+                    # vectorizar
+                    if os.path.exists(streams_vector):
+                        try:
+                            os.remove(streams_vector)
+                        except Exception:
+                            pass
+
+                    wbt.raster_streams_to_vector(streams_raster, flow_dir, streams_vector)
+
+                    # verificar que el shapefile resultante exista y contenga registros
+                    try:
+                        import geopandas as _gpd
+                        if os.path.exists(streams_vector):
+                            rivers_try = _gpd.read_file(streams_vector)
+                            if len(rivers_try) > 0:
+                                print(f"      ✅ Red de ríos vectorizada (umbral {th}) — {len(rivers_try)} segmentos")
+                                success_vectorized = True
+                                break
+                            else:
+                                print(f"      ⚠️ Vector resultante vacío para umbral {th}")
+                        else:
+                            print(f"      ⚠️ No se creó el archivo vector para umbral {th}")
+                    except Exception as e:
+                        print(f"      ⚠️ Error leyendo vector generado: {e}")
+                except Exception as e:
+                    print(f"      ⚠️ Falló extracción/vectorización con umbral {th}: {e}")
+
+            if not success_vectorized:
+                print(f"      ❌ No se pudo obtener una red de ríos válida con los umbrales probados: {tried_thresholds}")
+                # limpiar archivos intermedios si quedaron
+                try:
+                    if os.path.exists(streams_raster):
+                        os.remove(streams_raster)
+                except Exception:
+                    pass
+
+                # Estrategia de fallback: crear una capa de RÍOS sintética usando la geometría
+                # del límite del distrito con PESO_RIO=1 para permitir que el resto del flujo
+                # de trabajo continúe y genere un mapa incluso sin red real de ríos.
+                try:
+                    print("      ℹ️ Creando capa de fallback para RÍOS (PESO_RIO=1) usando geometría distrital")
+                    # limit_final está definido en el scope superior y contiene la geometría en CRS del DEM
+                    geom_union = limit_final.geometry.unary_union if hasattr(limit_final, 'geometry') else limit.geometry.unary_union
+                    area_km2 = geom_union.area / 1_000_000 if hasattr(geom_union, 'area') else 0
+                    gdf_rios_fallback = gpd.GeoDataFrame(
+                        {
+                            'clase': ['no_rio'],
+                            'dist_min_m': [999999],
+                            'dist_max_m': [999999],
+                            'area_km2': [round(area_km2, 4)],
+                            'PESO_RIO': [1]
+                        },
+                        geometry=[geom_union],
+                        crs=limit_final.crs if hasattr(limit_final, 'crs') else None
+                    )
+
+                    # asignar a variable local que luego será usada por el flujo principal
+                    rivers_clip = gdf_rios_fallback
+                    print(f"      ✅ Capa fallback creada: {len(rivers_clip)} geometría(s) con PESO_RIO=1")
+                except Exception as e:
+                    print(f"      ⚠️ Falló la creación del fallback de ríos: {e}")
+                    return None
         
         print(f"      ✅ Procesamiento hidrológico completado")
         
@@ -1065,8 +1147,8 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         print(f"   ℹ️ No se encontró shapefile en la carpeta actual")
         ruta_rios_ya_existe = False
     
-    # GENERACIÓN DE RÍOS CON WHITEBOX (SIEMPRE PARA CONSISTENCIA)
-    if not ruta_rios_ya_existe or True:  # SIEMPRE generar con Whitebox
+    # GENERACIÓN DE RÍOS CON WHITEBOX (SÓLO SI NO EXISTE EN CARPETA DEL USUARIO)
+    if not ruta_rios_ya_existe:
         print(f"\n   🆕 Generando shapefile de ríos con Whitebox (consistente para todos los distritos)...")
         print(f"   ⏳ Este proceso puede tardar varios minutos...")
         
@@ -1398,28 +1480,39 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         # 🆕 VERIFICAR Y LIMPIAR NOMBRES DE COLUMNAS
         print("\n   📋 Verificando columnas después de intersección...")
         print(f"      Columnas disponibles: {list(gdf_peligro.columns)}")
-        
-        # Buscar las columnas de peso (pueden tener sufijos _1, _2, etc.)
-        col_pendi = None
-        col_geomo = None
-        col_ppmax = None
-        col_rio = None
-        col_geol = None
-        
-        for col in gdf_peligro.columns:
-            if 'PESO' in col:
-                col_pendi = col
-            elif 'PESO_GEOMO' in col:
-                col_geomo = col
-            elif 'Nivel' in col:
-                col_ppmax = col
-            elif 'PESO_RIO' in col:
-                col_rio = col
-            elif 'PESO_GEOL' in col:
-                col_geol = col
-        
+
+        # Función auxiliar para localizar columnas por palabras clave (insensible a mayúsculas)
+        def find_col_by_keywords(candidate_cols, keywords_all=None, keywords_any=None, exclude_keywords=None):
+            keywords_all = [k.upper() for k in (keywords_all or [])]
+            keywords_any = [k.upper() for k in (keywords_any or [])]
+            exclude_keywords = [k.upper() for k in (exclude_keywords or [])]
+            for c in candidate_cols:
+                cu = c.upper()
+                if any(ex in cu for ex in exclude_keywords):
+                    continue
+                ok_all = all(k in cu for k in keywords_all) if keywords_all else True
+                ok_any = any(k in cu for k in keywords_any) if keywords_any else True
+                if ok_all and ok_any:
+                    return c
+            return None
+
+        cols_list = list(gdf_peligro.columns)
+
+        # Buscar columnas por prioridad para evitar capturar la primera columna que contenga sólo 'PESO'
+        col_geomo = find_col_by_keywords(cols_list, keywords_all=['PESO','GEOMO'], keywords_any=['GEOMO','PESO']) or find_col_by_keywords(cols_list, keywords_any=['GEOMO'])
+        col_geol  = find_col_by_keywords(cols_list, keywords_all=['PESO','GEOL'],  keywords_any=['GEOL','PESO']) or find_col_by_keywords(cols_list, keywords_any=['GEOL'])
+        col_rio   = find_col_by_keywords(cols_list, keywords_all=['PESO','RIO'],  keywords_any=['RIO','PESO']) or find_col_by_keywords(cols_list, keywords_any=['RIO'])
+        col_ppmax = find_col_by_keywords(cols_list, keywords_any=['NIVEL','LEVEL','PP','TR50','PRECIP'])
+
+        # Para pendiente buscamos una columna 'PESO' que no haya sido identificada como geomo/geol/rio
+        excluded = []
+        if col_geomo: excluded.append(col_geomo.upper())
+        if col_geol:  excluded.append(col_geol.upper())
+        if col_rio:   excluded.append(col_rio.upper())
+
+        col_pendi = find_col_by_keywords(cols_list, keywords_any=['PESO'], exclude_keywords=excluded)
+
         print(f"\n   📊 Columnas identificadas:")
-        # Imprimir solamente las columnas realmente detectadas (evitar None)
         detected = []
         if col_pendi:
             detected.append(("Pendiente", col_pendi))
@@ -1721,8 +1814,8 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
 if __name__ == "__main__":
     # EJEMPLO DE USO
     generar_mapa_peligro(
-        nombre_usuario="USUARIO_TEST3",
+        nombre_usuario="USUARIO_TEST2",
         departamento_sel="PIURA",
-        provincia_sel="SECHURA",
-        distrito_sel="SECHURA"
+        provincia_sel="PIURA",
+        distrito_sel="PIURA"
     )

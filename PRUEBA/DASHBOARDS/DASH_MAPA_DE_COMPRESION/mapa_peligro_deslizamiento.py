@@ -2,18 +2,15 @@
 """
 🎯 SCRIPT INTEGRADO: MAPA DE PELIGRO CON 4 PARÁMETROS + CENTROS POBLADOS
 
-MODIFICACIONES IMPLEMENTADAS:
-- 1. ✅ CORRECCIÓN CRÍTICA (mapa_ubicacion): Se corrige el 'AttributeError: 'NoneType' object has no attribute 'total_bounds''
-      dentro de 'mapa_ubicacion' (para tipo_mapa='provincia') al usar `gdf_context`.
-- 2. ✅ CORRECCIÓN DE GUARDADO (fig.savefig): Se elimina 'bbox_inches='tight'' y se maneja el error de 'tight_layout'
-      para prevenir fallos silenciosos/cuelgues durante el renderizado final (causa del error 'Archivo no generado').
-- 3. ✅ AJUSTE CRÍTICO DE LAYOUT (GRIDSPEC ANIDADO): Se implementa la estructura FINAL:
-      - Mapa Principal (arriba a la izquierda).
-      - 3 Ubicaciones apiladas (columna derecha completa).
-      - Pie de página dividido horizontalmente en 3 secciones: LOGO, MEMBRETE, LEYENDA.
-- 4. ✅ AJUSTE DE COLOR: Se cambia el Verde Lima por un Verde Oscuro (#33A02C) para mejor contraste en el nivel 'Baja' (1).
-- 5. 🚨 AJUSTE CRÍTICO DE CLASIFICACIÓN (FINAL): Se usa la función 'asignar_color_peligro' con umbrales ajustados 
-      a [1.75, 2.50, 3.25] para convertir zonas Verdes/Amarillas en Rojas/Naranjas, respetando la estructura solicitada.
+... (omitted previous comments for brevity) ...
+
+MODIFICACIONES IMPLEMENTADAS PARA EL USUARIO:
+- 7. ✅ AJUSTE CRÍTICO DE CCPP (REVERSIÓN PARCIAL): Se modifica la función de etiquetado a 
+      'agregar_etiquetas_simples_junto_a_ccpp_con_contorno' para:
+        a) Restaurar el contorno blanco alrededor de la letra (path_effects).
+        b) Restaurar el formato de texto a negrita (fontweight='bold').
+        c) Mantener la letra en negro y pequeña, pegada al punto.
+        d) Mantener los puntos de CCPP pequeños (markersize=2.5).
 """
 
 import geopandas as gpd
@@ -40,6 +37,7 @@ AMARILLO_CLARO = "#FFEE58"
 
 # 🔑 RUTAS DE CAPAS POR PROVINCIA
 CAPAS_POR_PROVINCIA = {
+# ... (cuerpo de CAPAS_POR_PROVINCIA sin cambios) ...
     "PIURA": {
         "GEOLOGIA": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/PIURA_PROVINCIA/GEOLOGIA/geologia_piura_con_pesos.shp",
         "GEOMORFOLOGIA": f"{ruta_base}/DATA/PELIGRO/DESLIZAMIENTO_PLUVIAL/PIURA_DEPARTAMENTO/PIURA_PROVINCIA/GEOMORFOLOGIA/geomorfologia_piura_con_pesos.shp",
@@ -57,6 +55,7 @@ CAPAS_POR_PROVINCIA = {
 
 # 🛠️ MAPEO DE COLUMNAS DE PESO ESPECÍFICAS (SEGÚN SU REQUERIMIENTO)
 PESO_COLUMNAS_MAP = {
+# ... (cuerpo de PESO_COLUMNAS_MAP sin cambios) ...
     "GEOLOGIA": "PESO_GEOL",
     "GEOMORFOLOGIA": "PESO_GEOMO",
     "PENDIENTE": "PESO",
@@ -69,6 +68,7 @@ RUTA_DISTRITOS = f"{ruta_base}/DATA/MAPA_DE_UBICACION/DISTRITOS_DEL_PERU/DISTRIT
 
 # ==================== PONDERACIONES PARA EL ÍNDICE DE PELIGRO ====================
 PONDERACIONES = {
+# ... (cuerpo de PONDERACIONES sin cambios) ...
     "P_GEOLOGIA": 0.10,      
     "P_GEOMORFOLOGIA": 0.15, 
     "P_PENDIENTE": 0.65,     
@@ -91,36 +91,25 @@ COL_DIST = 'NOMBDIST'
 COL_CCPP = 'NOMB_CCPP' 
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
-# 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS
+# 🎯 FUNCIONES DE ETIQUETADO DE CENTROS POBLADOS (AJUSTADA)
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblados, ax, radio_offset=0.12):
+def agregar_etiquetas_simples_junto_a_ccpp_con_contorno(gdf_distritos, gdf_centros_poblados, ax, radio_offset=0.12):
     """
-    Agrega etiquetas de centros poblados FUERA del límite distrital de manera ordenada.
+    MODIFICADA: Agrega etiquetas de centros poblados PEGADAS a los puntos (en el interior del distrito).
+    Añade el contorno blanco solicitado (path_effects) y restaura la negrita.
     """
     
     if gdf_centros_poblados is None or len(gdf_centros_poblados) == 0:
         return
     
-    # CORRECCIÓN DE DEPRECACIÓN: Usar union_all()
-    distrito_boundary = gdf_distritos.boundary.union_all()
+    # Parámetros ajustados por solicitud
+    OFFSET_TEXTO = 0.005 # Pequeño desplazamiento desde el centroide del punto
+    MARKER_SIZE = 2.5    # Puntos de CCPP más pequeños (antes 4)
+    FONT_SIZE = 3.1      # Letra pequeña
     
-    try:
-        # CORRECCIÓN DE DEPRECACIÓN: Usar union_all()
-        distrito_merged = gdf_distritos.union_all()
-        centroide = distrito_merged.centroid
-    except:
-        centroide = gdf_distritos.geometry.centroid.iloc[0]
-    
-    minx, miny, maxx, maxy = gdf_distritos.total_bounds
-    ancho_distrito = maxx - minx
-    alto_distrito = maxy - miny
-    escala = max(ancho_distrito, alto_distrito)
-    
-    offset_perpendicular = escala * radio_offset
-    
-    posiciones_etiquetas = []
-    distancia_minima_entre_etiquetas = escala * 0.04
+    # 🚨 EFECTO DE CONTORNO BLANCO
+    CONTORNO_BLANCO = [path_effects.withStroke(linewidth=1.0, foreground='white')]
     
     for idx, (i, row) in enumerate(gdf_centros_poblados.iterrows()):
         try:
@@ -138,73 +127,26 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
             
             x_orig, y_orig = punto.x, punto.y
             
-            punto_limite = distrito_boundary.interpolate(
-                distrito_boundary.project(punto)
-            )
+            # 1. Dibujar el punto del CCPP (pequeño)
+            ax.plot(x_orig, y_orig, 'o', color='#006400', markersize=MARKER_SIZE, zorder=6)
             
-            dx = x_orig - centroide.x
-            dy = y_orig - centroide.y
-            dist_vec = np.sqrt(dx**2 + dy**2)
-            
-            if dist_vec > 0:
-                dx_norm = dx / dist_vec
-                dy_norm = dy / dist_vec
-            else:
-                dx_norm, dy_norm = 1, 0
-            
-            x_label = punto_limite.x + dx_norm * offset_perpendicular
-            y_label = punto_limite.y + dy_norm * offset_perpendicular
-            
-            intentos_reubicacion = 0
-            max_intentos = 12
-            offset_adicional = 0
-            
-            while intentos_reubicacion < max_intentos:
-                muy_cerca = False
-                for pos_anterior in posiciones_etiquetas:
-                    dist = np.sqrt((x_label - pos_anterior[0])**2 + (y_label - pos_anterior[1])**2)
-                    if dist < distancia_minima_entre_etiquetas:
-                        muy_cerca = True
-                        break
-                
-                if not muy_cerca:
-                    break
-                else:
-                    intentos_reubicacion += 1
-                    offset_adicional = escala * 0.02 * intentos_reubicacion
-                    x_label = punto_limite.x + dx_norm * (offset_perpendicular + offset_adicional)
-                    y_label = punto_limite.y + dy_norm * (offset_perpendicular + offset_adicional)
-            
-            posiciones_etiquetas.append((x_label, y_label))
-            
-            ax.plot(
-                [x_orig, x_label],
-                [y_orig, y_label],
-                'w-',
-                linewidth=0.8,
-                alpha=0.95,
-                zorder=5
-            )
-            
-            ax.plot(x_orig, y_orig, 'o', color='#006400', markersize=4, zorder=6)
+            # 2. Dibujar la etiqueta
+            x_label = x_orig + OFFSET_TEXTO 
+            y_label = y_orig + OFFSET_TEXTO 
             
             ax.text(
                 x_label, y_label,
                 nombre,
-                fontsize=6.2,
-                fontweight='bold',
-                ha='center',
-                va='center',
-                bbox=dict(
-                    boxstyle='round,pad=0.35',
-                    facecolor='white',
-                    edgecolor='black',
-                    alpha=0.8,
-                    linewidth=0.6
-                ),
+                fontsize=FONT_SIZE,
+                fontweight='bold',    # RESTAURADO: Negrita
+                color='black',        # Mantenido: Negro
+                ha='left',            # Alineación a la izquierda del punto
+                va='center',         
+                path_effects=CONTORNO_BLANCO, # RESTAURADO: Contorno blanco
                 zorder=8
             )
         except Exception as e:
+            # print(f"Error etiquetando CCPP {idx}: {e}")
             continue
 
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
@@ -212,6 +154,7 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════
 
 def cargar_capa_admin(path, alias):
+# ... (cuerpo de cargar_capa_admin sin cambios) ...
     """
     Carga capas administrativas (límites, CCPP) y las proyecta a EPSG:3857.
     """
@@ -234,6 +177,7 @@ def cargar_capa_admin(path, alias):
         return None
 
 def cargar_capa_peligro(path, alias, target_utm_crs):
+# ... (cuerpo de cargar_capa_peligro sin cambios) ...
     """
     Carga las capas de peligro, las proyecta DIRECTAMENTE al CRS UTM de trabajo (32717)
     y repara las geometrías.
@@ -268,6 +212,7 @@ def cargar_capa_peligro(path, alias, target_utm_crs):
         return None
 
 def add_north_arrow_blanco_completo(ax, xy_pos=(0.95, 0.95), size=0.06):
+# ... (cuerpo de add_north_arrow_blanco_completo sin cambios) ...
     x_pos, y_pos = xy_pos
     s = size / 2
     trans = ax.transAxes
@@ -296,6 +241,7 @@ def add_north_arrow_blanco_completo(ax, xy_pos=(0.95, 0.95), size=0.06):
             path_effects=[path_effects.withStroke(linewidth=3, foreground='black')])
 
 def calculate_numeric_scale(ax, fig):
+# ... (cuerpo de calculate_numeric_scale sin cambios) ...
     xlim = ax.get_xlim()
     ground_width_m = xlim[1] - xlim[0]
     fig_width_in = fig.get_size_inches()[0]
@@ -307,6 +253,7 @@ def calculate_numeric_scale(ax, fig):
     return f"1:{scale_rounded:,}"
 
 def add_membrete(ax, dpto, prov, dist, main_map_ax, fig_obj):
+# ... (cuerpo de add_membrete sin cambios) ...
     """
     Agrega el membrete. La altura total de la caja es muy reducida para ser un pie de página compacto.
     """
@@ -356,6 +303,7 @@ def add_membrete(ax, dpto, prov, dist, main_map_ax, fig_obj):
 
 
 def grillado_utm_proyectado(ax, bbox, ndiv=8):
+# ... (cuerpo de grillado_utm_proyectado sin cambios) ...
     x0, y0, x1, y1 = bbox
     
     def fmt_este(x, pos):
@@ -385,6 +333,7 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
                    gdf_dpto_sel=None, gdf_prov_sel=None, col_prov=COL_PROV, col_dpto=COL_DPTO, 
                    departamento_sel=None, provincia_sel=None, gdf_departamentos=None, 
                    gdf_provincias=None, gdf_oceano=None):
+# ... (cuerpo de mapa_ubicacion sin cambios) ...
     
     is_focus_valid = not gdf_focus.empty and all(np.isfinite(gdf_focus.total_bounds))
     
@@ -479,6 +428,7 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
         spine.set_visible(True)
 
 def obtener_rutas_capas(provincia_sel):
+# ... (cuerpo de obtener_rutas_capas sin cambios) ...
     provincia_upper = provincia_sel.upper()
     
     if provincia_upper not in CAPAS_POR_PROVINCIA:
@@ -508,6 +458,7 @@ def obtener_rutas_capas(provincia_sel):
 # 🚨 FUNCIÓN DE ASIGNACIÓN DE COLOR MODIFICADA CON UMBRALES AGRESIVOS
 # ════════════════════════════════════════════════════════════════════════════════════
 def asignar_color_peligro(valor):
+# ... (cuerpo de asignar_color_peligro sin cambios) ...
     """
     Asigna el color basado en el Índice de Peligro (valor), 
     usando umbrales más agresivos para forzar más zonas rojas/naranjas.
@@ -533,6 +484,7 @@ def asignar_color_peligro(valor):
 # ════════════════════════════════════════════════════════════════════════════════════
 
 def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA", nombre_usuario=None):
+# ... (cuerpo de generar_mapa_peligro_deslizamiento sin cambios, excepto por el llamado a la función de etiquetado) ...
     """
     Genera el mapa de peligro (susceptibilidad) para un distrito específico
     combinando 4 capas. Implementa el layout 2x2 con subgrids para una estructura compacta.
@@ -724,44 +676,47 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
     except Exception as e:
         gdf_ccpp_dentro_proj = gpd.GeoDataFrame(geometry=[], crs=3857)
 
-    # 6. Generación del Mapa (LAYOUT FINAL CORREGIDO: CON LOGO Y PIE TRIPARTITO)
+    # 6. Generación del Mapa (ESTRUCTURA DE geografica_final.py)
     
-    # 🎯 Estructura: 2 filas x 2 columnas principales.
-    # Fila 0: Mapa Principal (izquierda) y Ubicaciones Dpto/Prov/Dist (derecha)
-    # Fila 1: Logo / Membrete / Leyenda (izquierda) y Ubicaciones (derecha)
+    print("\n🎨 Generando layout del mapa...")
+    fig = plt.figure(figsize=(14, 9.9))
+    grid = plt.GridSpec(1, 2, width_ratios=[3.0, 1], wspace=0.05)
+    gs_izquierda = grid[0, 0].subgridspec(3, 1, height_ratios=[0.08, 3.5, 0.42], hspace=0.08)
     
-    fig = plt.figure(figsize=(22, 16)) # Figura ajustada (más ancha)
+    ax_titulo = fig.add_subplot(gs_izquierda[0])
+    ax_titulo.text(0.5, 0.5, f"MAPA DE SUSCEPTIBILIDAD A DESLIZAMIENTOS PLUVIALES - DISTRITO DE {distrito_upper.upper()}", 
+                   ha='center', va='center', fontsize=13, fontweight="normal", 
+                   bbox=dict(boxstyle='square,pad=0.5', facecolor='white', 
+                            edgecolor='black', linewidth=1.5, alpha=0.95))
+    ax_titulo.axis('off')
     
-    # Grid: 2 filas x 2 columnas principales
-    # Grid principal: 2 filas x 2 columnas
-    gs_main = fig.add_gridspec(
-        nrows=2, ncols=2, 
-        height_ratios=[3, 0.6],  # Mapa grande arriba (3), pie compacto abajo (0.6)
-        width_ratios=[2.5, 1],   # Columna izq ancha (2.5), Columna der estrecha (1)
-        hspace=0.15, wspace=0.25
-    )
+    ax_mapa = fig.add_subplot(gs_izquierda[1])
     
-    # --- Columna IZQUIERDA ---
-    # Mapa principal (arriba)
-    ax_mapa = fig.add_subplot(gs_main[0, 0])
+    # Calcular bbox con aspect ratio consistente (como en geografica_final.py)
+    minx, miny, maxx, maxy = gdf_distrito_sel_3857.total_bounds
+    buffer_factor = 0.15
+    buffer_x = (maxx - minx) * buffer_factor
+    buffer_y = (maxy - miny) * buffer_factor
+    bbox_temp = (minx - buffer_x, miny - buffer_y, maxx + buffer_x, maxy + buffer_y)
     
-    # Subdivisión de la fila inferior izquierda para Logo, Membrete, Leyenda
-    gs_pie = gs_main[1, 0].subgridspec(1, 3, 
-                                        width_ratios=[0.5, 2, 1],  # Logo pequeño, Membrete grande, Leyenda media
-                                        wspace=0.15)
+    # Mantener aspect ratio consistente (1.21)
+    aspect_ratio_objetivo = 1.21
+    cx = (bbox_temp[0] + bbox_temp[2]) / 2
+    cy = (bbox_temp[1] + bbox_temp[3]) / 2
+    ancho_actual = bbox_temp[2] - bbox_temp[0]
+    alto_actual = bbox_temp[3] - bbox_temp[1]
+    aspecto_actual = ancho_actual / alto_actual
     
-    ax_logo = fig.add_subplot(gs_pie[0, 0])      # Logo pequeño
-    ax_membrete = fig.add_subplot(gs_pie[0, 1])  # Membrete
-    ax_leyenda = fig.add_subplot(gs_pie[0, 2])   # Leyenda
-    # --- Columna DERECHA ---
-    # Subdivisión vertical para los 3 mapas de ubicación
-    gs_ubicacion = gs_main[:, 1].subgridspec(3, 1, 
-                                              height_ratios=[1, 1, 1],
-                                              hspace=0.3)
+    if aspecto_actual > aspect_ratio_objetivo:
+        nuevo_alto = ancho_actual / aspect_ratio_objetivo
+        bbox_main = (bbox_temp[0], cy - nuevo_alto/2, bbox_temp[2], cy + nuevo_alto/2)
+    else:
+        nuevo_ancho = alto_actual * aspect_ratio_objetivo
+        bbox_main = (cx - nuevo_ancho/2, bbox_temp[1], cx + nuevo_ancho/2, bbox_temp[3])
     
-    ax_loc_dpto = fig.add_subplot(gs_ubicacion[0, 0])  # Ubicación Nacional
-    ax_loc_prov = fig.add_subplot(gs_ubicacion[1, 0])  # Ubicación Departamental
-    ax_loc_dist = fig.add_subplot(gs_ubicacion[2, 0])  # Ubicación Provincial
+    ax_mapa.set_xlim(bbox_main[0], bbox_main[2])
+    ax_mapa.set_ylim(bbox_main[1], bbox_main[3])
+    ax_mapa.set_aspect('equal', adjustable='box')
     
     # --- Dibujo del Mapa Principal (ax_mapa) ---
     print("🛰️ Descargando imagen satelital...")
@@ -769,22 +724,29 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
     print("🎨 Dibujando niveles de peligro y etiquetas...")
     gdf_peligro_plot.plot(ax=ax_mapa, color=gdf_peligro_plot['COLOR_PELIGRO'], edgecolor='none', alpha=0.95, zorder=5)
     gdf_distrito_sel_3857.plot(ax=ax_mapa, facecolor='none', edgecolor='black', linewidth=1.5, zorder=6)
-    agregar_etiquetas_ordenadas_circularmente(
+    
+    agregar_etiquetas_simples_junto_a_ccpp_con_contorno(
         gdf_distrito_sel_3857, 
         gdf_ccpp_dentro_proj, 
         ax_mapa
     )
-    ax_mapa.set_title(f"MAPA DE SUSCEPTIBILIDAD A DESLIZAMIENTOS PLUVIALES\nDISTRITO DE {distrito_upper}", 
-                      fontsize=14, fontweight='bold', pad=15)
-    x_min, y_min, x_max, y_max = gdf_peligro_plot.total_bounds
-    ax_mapa.set_xlim(x_min, x_max)
-    ax_mapa.set_ylim(y_min, y_max)
-    ax_mapa.set_aspect('equal', adjustable='box')
+    
     add_north_arrow_blanco_completo(ax_mapa, xy_pos=(0.95, 0.95)) 
     ax_mapa.add_artist(ScaleBar(1.0, units='km', location='lower right', box_alpha=0.8, 
                                 frameon=True, color='black', box_color='white'))
-    grillado_utm_proyectado(ax_mapa, (x_min, y_min, x_max, y_max), ndiv=8)
+    grillado_utm_proyectado(ax_mapa, bbox_main, ndiv=8)
 
+    # --- Membrete y Leyenda (Fila Inferior - Pie de Página) ---
+    gs_memb_ley = gs_izquierda[2].subgridspec(1, 3, wspace=0.15, width_ratios=[0.5, 2, 1])
+    ax_logo = fig.add_subplot(gs_memb_ley[0])
+    ax_membrete = fig.add_subplot(gs_memb_ley[1])
+    ax_leyenda = fig.add_subplot(gs_memb_ley[2])
+    
+    # --- Mapas de Ubicación (Columna Derecha) ---
+    gs_ubicacion = grid[0, 1].subgridspec(3, 1, height_ratios=[1, 1, 1], hspace=0.15)
+    ax_loc_dpto = fig.add_subplot(gs_ubicacion[0])
+    ax_loc_prov = fig.add_subplot(gs_ubicacion[1])
+    ax_loc_dist = fig.add_subplot(gs_ubicacion[2])
 
     # --- Dibujo de Mapas de Ubicación (Columna 1) ---
     print("🗺️ Generando Mapas de Ubicación...")
@@ -843,7 +805,7 @@ def generar_mapa_peligro_deslizamiento(distrito, provincia, departamento="PIURA"
         legend_handles.append(patch)
         
     ccpp_handle = Line2D([0], [0], marker='o', color='w', label='Centros Poblados',
-                         markerfacecolor='#006400', markersize=6, linestyle='None')
+                         markerfacecolor='#006400', markersize=4, linestyle='None') # Se usa markersize=4 para visibilidad en leyenda
     legend_handles.append(ccpp_handle)
     
     # Se ajusta la ubicación de la leyenda al nuevo eje (ax_leyenda)

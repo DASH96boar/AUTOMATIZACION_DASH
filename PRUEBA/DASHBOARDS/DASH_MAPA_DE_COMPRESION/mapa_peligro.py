@@ -18,6 +18,7 @@ import matplotlib.patheffects as path_effects
 from shapely.geometry import box, mapping
 from shapely.ops import unary_union
 import pyproj
+import unicodedata
 from matplotlib.ticker import FuncFormatter
 from matplotlib.patches import Polygon, Rectangle, Patch
 from matplotlib.lines import Line2D
@@ -28,6 +29,8 @@ import pandas as pd
 try:
     import rasterio
     from rasterio.mask import mask as rasterio_mask
+    from rasterio.enums import Resampling
+    from rasterio.transform import Affine
     from whitebox import WhiteboxTools
     HYDRO_AVAILABLE = True
 except ImportError:
@@ -44,6 +47,82 @@ RUTA_BASE_PPMAX = f"{ruta_base}/DATA/PELIGRO/INUNDACION_PLUVIAL/CUSCO_DEPARTAMEN
 RUTA_BASE_GEOLOGIA = f"{ruta_base}/DATA/PELIGRO/INUNDACION_PLUVIAL/CUSCO_DEPARTAMENTO/ANTA_PROVINCIA/GEOLOGIA"
 RUTA_DEM = f"{ruta_base}/DATA/PELIGRO/INUNDACION_PLUVIAL/CUSCO_DEPARTAMENTO/DATOS_GENERALES/DISTANCIA_RIO/DEM.tif"
 RUTA_CENTROS_POBLADOS = f"{ruta_base}/DATA/CENTROS_POBLADOS/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
+
+
+def get_rutas_peligro(departamento_sel, provincia_sel):
+    """Construye rutas base para capas de peligro según departamento y provincia.
+
+    Si el departamento no tiene una estructura especial, se devuelven
+    las rutas por defecto ya definidas globalmente.
+    """
+    dpto = (departamento_sel or "").strip().upper()
+    prov = (provincia_sel or "").strip().upper()
+
+    # Ruta por defecto (las ya configuradas para CUSCO/ANTA)
+    rutas = {
+        'RUTA_BASE_PENDIENTE': RUTA_BASE_PENDIENTE,
+        'RUTA_BASE_GEOMORFOLOGIA': RUTA_BASE_GEOMORFOLOGIA,
+        'RUTA_BASE_PPMAX': RUTA_BASE_PPMAX,
+        'RUTA_BASE_GEOLOGIA': RUTA_BASE_GEOLOGIA,
+        'RUTA_DEM': RUTA_DEM
+    }
+
+    # Excepciones/estructura de carpetas conocida para PIURA
+    if dpto == 'PIURA':
+        base = os.path.join(ruta_base, 'DATA', 'PELIGRO', 'INUNDACION_PLUVIAL', 'PIURA_DEPARTAMENTO')
+
+        # Buscar dentro del directorio del departamento (recursivo) — así encontraremos archivos
+        # aunque las carpetas de provincia usen UPPER/Title case (PIURA_PROVINCIA / PIURA_Provincia)
+        rutas['RUTA_BASE_GEOMORFOLOGIA'] = base
+        rutas['RUTA_BASE_GEOLOGIA'] = base
+        rutas['RUTA_BASE_PPMAX'] = os.path.join(base, 'DATOS_GENERALES', 'PP_MAX')
+        rutas['RUTA_BASE_PENDIENTE'] = os.path.join(base, 'DATOS_GENERALES', 'PENDIENTE')
+        rutas['RUTA_DEM'] = os.path.join(base, 'DATOS_GENERALES', 'DISTANCIA_RIO')
+
+    return rutas
+
+
+def downsample_dem(dem_in, dem_out, factor=4):
+    """Crear un DEM con resolución reducida (factor entero > 1).
+
+    Usa Resampling.average para disminuir tamaño y crear un DEM temporal que
+    acelera el procesamiento hidrológico.
+    """
+    if not os.path.exists(dem_in):
+        return None
+    try:
+        os.makedirs(os.path.dirname(dem_out), exist_ok=True)
+        with rasterio.open(dem_in) as src:
+            new_width = max(1, int(src.width / factor))
+            new_height = max(1, int(src.height / factor))
+            if new_width == src.width and new_height == src.height:
+                # nothing to do
+                return dem_in
+
+            data = src.read(
+                out_shape=(src.count, new_height, new_width),
+                resampling=Resampling.average
+            )
+
+            # Adjust transform: scale by factor
+            scale_x = src.width / new_width
+            scale_y = src.height / new_height
+            new_transform = src.transform * Affine.scale(scale_x, scale_y)
+
+            kwargs = src.meta.copy()
+            kwargs.update({
+                'height': new_height,
+                'width': new_width,
+                'transform': new_transform
+            })
+
+            with rasterio.open(dem_out, 'w', **kwargs) as dst:
+                dst.write(data)
+
+            return dem_out
+    except Exception as e:
+        print(f"      ⚠️ Error al crear DEM reducido: {e}")
+        return None
 
 # CONFIGURACIÓN DE GENERACIÓN DE RÍOS
 INTENSIDAD_RIOS = "muy_baja"  # Opciones: "muy_alta", "alta", "media", "baja", "muy_baja"
@@ -245,9 +324,10 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
     wbt.set_verbose_mode(True)
     wbt.set_max_procs(4)
     
-    # Verificar que existe el DEM
-    if not os.path.exists(RUTA_DEM):
-        print(f"❌ No se encontró el DEM en: {RUTA_DEM}")
+    # Verificar que existe el DEM (acepta ruta personalizada mediante variable global opcional RUTA_DEM_USUARIO)
+    dem_uso = globals().get('RUTA_DEM_USUARIO', None) or RUTA_DEM
+    if not os.path.exists(dem_uso):
+        print(f"❌ No se encontró el DEM en: {dem_uso}")
         return None
     
     print(f"[1/6] ✂️ Recortando DEM al distrito...")
@@ -256,7 +336,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
         # Cargar límite del distrito
         limit = distrito_shapefile.copy()
         
-        with rasterio.open(RUTA_DEM) as dem:
+        with rasterio.open(dem_uso) as dem:
             if limit.crs != dem.crs:
                 limit_proj = limit.to_crs(dem.crs)
             else:
@@ -270,7 +350,7 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
             print(f"         - Total píxeles: {total_pixels:,}")
         
         # Recortar DEM
-        with rasterio.open(RUTA_DEM) as src:
+        with rasterio.open(dem_uso) as src:
             geom = [mapping(limit_proj.geometry.unary_union)]
             out_image, out_transform = rasterio_mask(src, geom, crop=True)
             out_meta = src.meta.copy()
@@ -689,8 +769,15 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     bbox = (cx - S / 2, cy - S / 2, cx + S / 2, cy + S / 2)
     
+    # Proteger la creación del bbox y la operación de clip para evitar errores de LinearRing
     if gdf_oceano is not None:
-        gdf_oceano.clip(box(*bbox)).plot(ax=ax, color="#A4D4FF", edgecolor="none", zorder=2)
+        if all(np.isfinite(bbox)) and bbox[0] < bbox[2] and bbox[1] < bbox[3]:
+            try:
+                gdf_oceano.clip(box(*bbox)).plot(ax=ax, color="#A4D4FF", edgecolor="none", zorder=2)
+            except Exception as e:
+                print(f"      ⚠️ Error al graficar/oceano.clip(box): {e}")
+        else:
+            print("      ⚠️ BBox inválida para mapa de ubicación; se omitirá la capa de océano")
     
     if tipo_mapa == "pais":
         if gdf_base_map is not None:
@@ -725,8 +812,18 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
                 etiqueta.upper(), color="white", fontsize=8, ha="center", va="center", zorder=9, 
                 path_effects=[path_effects.withStroke(linewidth=3, foreground="black")])
     
-    ax.set_xlim(bbox[0], bbox[2])
-    ax.set_ylim(bbox[1], bbox[3])
+    # Sólo ajustar límites si bbox es válido
+    valid_bbox = all(np.isfinite(bbox)) and bbox[0] < bbox[2] and bbox[1] < bbox[3]
+    if valid_bbox:
+        ax.set_xlim(bbox[0], bbox[2])
+        ax.set_ylim(bbox[1], bbox[3])
+    else:
+        print("      ⚠️ BBox inválida: uso de autoscale para el subplot de ubicación")
+        try:
+            ax.autoscale()
+        except Exception:
+            pass
+
     ax.set_facecolor("#f0f8ff")
     ax.set_aspect('equal', adjustable='box')
     ax.axis('on')
@@ -770,7 +867,7 @@ def asignar_color_peligro(valor):
 # 🎯 FUNCIÓN PRINCIPAL CON 5 PARÁMETROS + CENTROS POBLADOS
 # ═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
 
-def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distrito_sel):
+def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distrito_sel, fast_mode=False, downsample_factor=8, dry_run=False, auto_fast=True):
     print("\n" + "="*80)
     print("🗺️ INICIANDO PROCESO DE GENERACIÓN DE MAPA DE PELIGRO (5 PARÁMETROS)")
     print("="*80)
@@ -832,17 +929,102 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         return None
 
     print("\n🔍 Filtrando datos del área seleccionada...")
-    gdf_dpto_sel = gdf_departamentos[gdf_departamentos[col_dpto] == departamento_sel]
-    gdf_prov_sel = gdf_provincias[gdf_provincias[col_prov] == provincia_sel]
-    gdf_distrito = gdf_distritos[(gdf_distritos[col_distr] == distrito_sel) & 
-                                  (gdf_distritos[col_prov] == provincia_sel)]
+
+    # Normalizadores para matching tolerante (mayúsculas, espacios, acentos)
+    def normalize_str(s):
+        if s is None:
+            return ""
+        s = str(s).strip()
+        s = unicodedata.normalize('NFKD', s).encode('ASCII', 'ignore').decode('ASCII')
+        return s.upper()
+
+    def select_by_name(gdf, col, name):
+        """Intentar varias estrategias para localizar un área: exacto (normalizado), contains, startswith."""
+        if name is None:
+            return gdf.iloc[0:0]  # empty
+        name_norm = normalize_str(name)
+        # exact match (after normalize)
+        mask = gdf[col].astype(str).apply(normalize_str) == name_norm
+        if mask.any():
+            return gdf[mask]
+        # contains
+        mask = gdf[col].astype(str).apply(normalize_str).str.contains(name_norm)
+        if mask.any():
+            return gdf[mask]
+        # startswith
+        mask = gdf[col].astype(str).apply(normalize_str).str.startswith(name_norm)
+        if mask.any():
+            return gdf[mask]
+        return gdf.iloc[0:0]
+
+    gdf_dpto_sel = select_by_name(gdf_departamentos, col_dpto, departamento_sel)
+    gdf_prov_sel = select_by_name(gdf_provincias, col_prov, provincia_sel)
+    # Para distrito necesitamos coincidir por provincia también. Primero filtrar provincia y luego distrito.
+    if not gdf_prov_sel.empty:
+        gdf_distritos_prov = gdf_distritos[gdf_distritos[col_prov].astype(str).apply(lambda x: normalize_str(x) in set(gdf_prov_sel[col_prov].astype(str).apply(normalize_str)) )]
+    else:
+        gdf_distritos_prov = gdf_distritos
+
+    gdf_distrito = select_by_name(gdf_distritos_prov, col_distr, distrito_sel)
     gdf_distritos_en_provincia = gdf_distritos[gdf_distritos[col_prov] == provincia_sel]
 
+    # Construir rutas específicas para el departamento/provincia (soporta PIURA)
+    rutas_capa = get_rutas_peligro(departamento_sel, provincia_sel)
+    ruta_base_geomorfo = rutas_capa['RUTA_BASE_GEOMORFOLOGIA']
+    ruta_base_ppmax = rutas_capa['RUTA_BASE_PPMAX']
+    ruta_base_geologia = rutas_capa['RUTA_BASE_GEOLOGIA']
+    ruta_base_pendiente = rutas_capa['RUTA_BASE_PENDIENTE']
+    ruta_dem_dir = rutas_capa['RUTA_DEM']
+
     if gdf_distrito.empty:
-        print(f"❌ Error: No se pudo encontrar la geometría para el distrito '{distrito_sel}'.")
-        return None
+        # Intentar construir un polígono a partir de capas temáticas (p.ej geomorfología / geología)
+        print(f"   ⚠️ No se encontró un distrito exacto para '{distrito_sel}'. Buscaré una capa de provincia para usar su polígono como área de interés...")
+        # Buscar en geomorfología primero
+        ruta_geom_prov = buscar_archivo_peligro(ruta_base_geomorfo, provincia_sel, "GEOMORFOLOGÍA")
+        if not ruta_geom_prov:
+            ruta_geom_prov = buscar_archivo_peligro(ruta_base_geomorfo, provincia_sel.lower(), "GEOMORFOLOGÍA")
+
+        if ruta_geom_prov:
+            try:
+                gdf_temp = gpd.read_file(ruta_geom_prov)
+                # Unir geometrías para obtener la extensión de la provincia
+                union = gdf_temp.geometry.unary_union
+                gdf_distrito = gpd.GeoDataFrame({col_distr: [provincia_sel], col_prov: [provincia_sel]}, geometry=[union], crs=gdf_temp.crs)
+                print(f"      ✅ Usando geometría unida de {os.path.basename(ruta_geom_prov)} como área de interés (provincia)")
+            except Exception as e:
+                print(f"      ⚠️ No se pudo leer/usar {ruta_geom_prov}: {e}")
+
+        # Si sigue vacío, intentar con geología
+        if gdf_distrito.empty:
+            ruta_geol_prov = buscar_archivo_peligro(ruta_base_geologia, provincia_sel, "GEOLOGÍA")
+            if not ruta_geol_prov:
+                ruta_geol_prov = buscar_archivo_peligro(ruta_base_geologia, provincia_sel.lower(), "GEOLOGÍA")
+
+            if ruta_geol_prov:
+                try:
+                    gdf_temp = gpd.read_file(ruta_geol_prov)
+                    union = gdf_temp.geometry.unary_union
+                    gdf_distrito = gpd.GeoDataFrame({col_distr: [provincia_sel], col_prov: [provincia_sel]}, geometry=[union], crs=gdf_temp.crs)
+                    print(f"      ✅ Usando geometría unida de {os.path.basename(ruta_geol_prov)} como área de interés (provincia)")
+                except Exception as e:
+                    print(f"      ⚠️ No se pudo leer/usar {ruta_geol_prov}: {e}")
+
+        if gdf_distrito.empty:
+            # Mensaje final: listar candidatos cercanos para ayudar al usuario
+            posibles = gdf_distritos[col_distr].astype(str).unique()[:12]
+            print(f"❌ Error: No se pudo encontrar la geometría para el distrito '{distrito_sel}'.")
+            print("   👉 Algunos distritos disponibles (ejemplos):", list(posibles))
+            return None
 
     print(f"   ✅ Distrito encontrado con geometría válida")
+
+    # Construir rutas específicas para el departamento/provincia (soporta PIURA)
+    rutas_capa = get_rutas_peligro(departamento_sel, provincia_sel)
+    ruta_base_geomorfo = rutas_capa['RUTA_BASE_GEOMORFOLOGIA']
+    ruta_base_ppmax = rutas_capa['RUTA_BASE_PPMAX']
+    ruta_base_geologia = rutas_capa['RUTA_BASE_GEOLOGIA']
+    ruta_base_pendiente = rutas_capa['RUTA_BASE_PENDIENTE']
+    ruta_dem_dir = rutas_capa['RUTA_DEM']
 
     # 🆕 GENERAR SHAPEFILE DE RÍOS AUTOMÁTICAMENTE EN CARPETA DEL USUARIO
     print("\n" + "="*80)
@@ -921,6 +1103,53 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             print(f"   🆕 Generando shapefile de ríos por primera vez...")
             print(f"   ⏳ Este proceso puede tardar varios minutos...")
             
+            # Si el departamento provee un DEM en ruta_dem_dir, buscar un .tif dentro
+            ruta_dem_candidate = None
+            if os.path.isdir(ruta_dem_dir):
+                for f in os.listdir(ruta_dem_dir):
+                    if f.lower().endswith('.tif'):
+                        ruta_dem_candidate = os.path.join(ruta_dem_dir, f)
+                        break
+            elif os.path.isfile(ruta_dem_dir):
+                ruta_dem_candidate = ruta_dem_dir
+
+            if ruta_dem_candidate:
+                # Auto-detect DEM size and enable fast mode if requested
+                if auto_fast and rasterio is not None:
+                    try:
+                        with rasterio.open(ruta_dem_candidate) as ds_check:
+                            pixels = ds_check.width * ds_check.height
+                        if pixels > 5_000_000 and not fast_mode:
+                            print(f"   ⚡ DEM muy grande ({pixels:,} píxeles) — activando fast_mode automáticamente")
+                            fast_mode = True
+                    except Exception as e:
+                        print(f"   ⚠️ No se pudo determinar el tamaño del DEM: {e}")
+                # Si se solicita fast_mode, crear DEM de menor resolución para acelerar
+                if fast_mode and rasterio is not None and not dry_run:
+                    dem_down = os.path.join(carpeta_usuario, "temp_hydro", "dem_downsampled.tif")
+                    print(f"   ⚡ fast_mode activado — creando DEM reducido (factor={downsample_factor}) para acelerar procesamiento...")
+                    down = downsample_dem(ruta_dem_candidate, dem_down, factor=downsample_factor)
+                    if down:
+                        globals()['RUTA_DEM_USUARIO'] = down
+                        print(f"   ✅ DEM reducido creado: {down}")
+                    else:
+                        globals()['RUTA_DEM_USUARIO'] = ruta_dem_candidate
+                        print(f"   ⚠️ No se creó DEM reducido — se usará DEM original: {ruta_dem_candidate}")
+                else:
+                    # Exportar DEM personalizado para uso interno por la función de generación
+                    globals()['RUTA_DEM_USUARIO'] = ruta_dem_candidate
+
+            if dry_run:
+                print("   🧭 dry_run activado — NO se generará shapefile de ríos. Validación completa de rutas:")
+                print(f"      - DEM (candidato): {ruta_dem_candidate}")
+                print(f"      - carpeta_rios_usuario: {carpeta_rios_usuario}")
+                # return early in dry_run mode
+                return {
+                    'status': 'dry_run',
+                    'dem': ruta_dem_candidate,
+                    'carpeta_rios_usuario': carpeta_rios_usuario
+                }
+
             ruta_rios = generar_shapefile_rios_con_pesos(
                 gdf_distrito, 
                 carpeta_rios_usuario,
@@ -941,11 +1170,11 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     try:
         # 1️⃣ PENDIENTE
         print(f"\n   🔍 Buscando capa de PENDIENTE para {provincia_sel}...")
-        ruta_pendiente = buscar_archivo_peligro(RUTA_BASE_PENDIENTE, provincia_sel, "PENDIENTE")
+        ruta_pendiente = buscar_archivo_peligro(ruta_base_pendiente, provincia_sel, "PENDIENTE")
         if not ruta_pendiente:
-            ruta_pendiente = buscar_archivo_peligro(RUTA_BASE_PENDIENTE, departamento_sel, "PENDIENTE")
+            ruta_pendiente = buscar_archivo_peligro(ruta_base_pendiente, departamento_sel, "PENDIENTE")
         if not ruta_pendiente:
-            ruta_pendiente = buscar_archivo_peligro(RUTA_BASE_PENDIENTE, "peso", "PENDIENTE")
+            ruta_pendiente = buscar_archivo_peligro(ruta_base_pendiente, "peso", "PENDIENTE")
         
         if not ruta_pendiente:
             raise FileNotFoundError(f"No se encontró archivo de PENDIENTE")
@@ -955,9 +1184,9 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         
         # 2️⃣ GEOMORFOLOGÍA
         print(f"\n   🔍 Buscando capa de GEOMORFOLOGÍA...")
-        ruta_geomorfo = buscar_archivo_peligro(RUTA_BASE_GEOMORFOLOGIA, departamento_sel.lower(), "GEOMORFOLOGÍA")
+        ruta_geomorfo = buscar_archivo_peligro(ruta_base_geomorfo, departamento_sel.lower(), "GEOMORFOLOGÍA")
         if not ruta_geomorfo:
-            ruta_geomorfo = buscar_archivo_peligro(RUTA_BASE_GEOMORFOLOGIA, "peso", "GEOMORFOLOGÍA")
+            ruta_geomorfo = buscar_archivo_peligro(ruta_base_geomorfo, "peso", "GEOMORFOLOGÍA")
         
         if not ruta_geomorfo:
             raise FileNotFoundError(f"No se encontró archivo de GEOMORFOLOGÍA")
@@ -967,9 +1196,13 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         
         # 3️⃣ PP MÁXIMA
         print(f"\n   🔍 Buscando capa de PP MÁXIMA...")
-        ruta_ppmax = buscar_archivo_peligro(RUTA_BASE_PPMAX, "ppmax", "PP MÁXIMA")
-        if not ruta_ppmax:
-            ruta_ppmax = buscar_archivo_peligro(RUTA_BASE_PPMAX, "peso", "PP MÁXIMA")
+        # Buscar con varios patrones comunes de archivos PP/Tr50 para cubrir nombres distintos
+        ruta_ppmax = None
+        pp_patterns = ["ppmax", "tr50", "pp", "clasif", "clasificacion", "peso"]
+        for patt in pp_patterns:
+            ruta_ppmax = buscar_archivo_peligro(ruta_base_ppmax, patt, "PP MÁXIMA")
+            if ruta_ppmax:
+                break
         
         if not ruta_ppmax:
             raise FileNotFoundError(f"No se encontró archivo de PP MÁXIMA")
@@ -978,23 +1211,80 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         print(f"      ✅ PP Máxima cargada: {len(gdf_ppmax)} registros")
         
         # 4️⃣ 🆕 DISTANCIA A RÍOS (ya generado)
-        print(f"\n   🔍 Cargando capa de DISTANCIA A RÍOS...")
-        gdf_rios = gpd.read_file(ruta_rios)
+        print(f"\n   🔍 Cargando capa de DISTANCIA A RÍOS (detección inteligente)...")
+
+        # buscar shapefile de ríos ya existente en diferentes ubicaciones para evitar procesamiento pesado
+        posibles_ruta_rio = []
+        # 1) shapefile en carpeta del usuario
+        posibles_ruta_rio.append(ruta_rios)
+        # 2) DEM folder (puede contener shapefiles de ríos vectorizados)
+        posibles_ruta_rio.append(os.path.join(ruta_dem_dir, 'distancia_rio.shp'))
+
+        # 3) buscar archivos con nombres comunes en la ruta del departamento/provincia
+        common_rio_patterns = ['rio', 'rios', 'stream', 'streams', 'rivers']
+        for root, _, files in os.walk(rutas_capa.get('RUTA_DEM', ruta_dem_dir)):
+            for f in files:
+                if f.lower().endswith('.shp') and any(p in f.lower() for p in common_rio_patterns):
+                    posibles_ruta_rio.append(os.path.join(root, f))
+
+        ruta_rios_encontrada = None
+        for p in posibles_ruta_rio:
+            if p and os.path.exists(p) and p.lower().endswith('.shp'):
+                ruta_rios_encontrada = p
+                print(f"      ✅ Shapefile de ríos detectado: {ruta_rios_encontrada}")
+                break
+
+        gdf_rios = None
+        if ruta_rios_encontrada:
+            try:
+                gdf_rios = gpd.read_file(ruta_rios_encontrada)
+            except Exception as e:
+                print(f"      ⚠️ Error leyendo shapefile detectado: {e}")
+
+        # si no hay shapefile y no estamos en dry_run -> generar
+        if gdf_rios is None:
+            print("      ℹ️ No se detectó shapefile de ríos existente.")
+            if dry_run:
+                print("      🧭 dry_run: no se generará la red de ríos ahora.")
+            else:
+                print("      🆕 Generando shapefile de ríos (esto puede tardar)...")
+                ruta_rios = generar_shapefile_rios_con_pesos(
+                    gdf_distrito,
+                    carpeta_rios_usuario,
+                    temp_folder=os.path.join(carpeta_usuario, 'temp_hydro'),
+                    nombre_distrito=distrito_sel
+                )
+
+                if ruta_rios and os.path.exists(ruta_rios):
+                    try:
+                        gdf_rios = gpd.read_file(ruta_rios)
+                    except Exception as e:
+                        print(f"      ⚠️ Error cargando shapefile recién generado: {e}")
         
-        # Ya debería estar en 3857, pero verificar
-        if gdf_rios.crs.to_epsg() != 3857:
-            gdf_rios = gdf_rios.to_crs(epsg=3857)
-        
-        print(f"      ✅ Distancia a Ríos cargada: {len(gdf_rios)} registros")
+        # Si cargamos ríos, asegurar columna PESO_RIO; si no, marcaremos que no existe y lo omitiremos
+        if gdf_rios is not None:
+            if 'PESO_RIO' not in gdf_rios.columns:
+                posibles = [c for c in gdf_rios.columns if 'PESO' in c.upper()]
+                if posibles:
+                    chosen = posibles[0]
+                    print(f"      ⚠️ No existe 'PESO_RIO' — usando columna encontrada '{chosen}' como PESO_RIO")
+                    gdf_rios['PESO_RIO'] = gdf_rios[chosen]
+                else:
+                    # Si no hay columnas de peso, crear una por defecto (valor 1)
+                    print("      ⚠️ No se encontró columna de peso en ríos; se creará 'PESO_RIO' con valor por defecto = 1")
+                    gdf_rios['PESO_RIO'] = 1
+            print(f"      ✅ Distancia a Ríos cargada: {len(gdf_rios)} registros")
+        else:
+            print("      ⚠️ No hay capa de ríos disponible — se omitirá el componente río en el cálculo de peligro")
         print(f"      📋 Columnas: {list(gdf_rios.columns)}")
         
         # 5️⃣ 🆕 GEOLOGÍA
         print(f"\n   🔍 Cargando capa de GEOLOGÍA...")
-        ruta_geologia = os.path.join(RUTA_BASE_GEOLOGIA, "geolo_cusco_con_pesos.shp")
-        
-        if not os.path.exists(ruta_geologia):
-            raise FileNotFoundError(f"No se encontró archivo de GEOLOGÍA en: {ruta_geologia}")
-        
+        # Buscar automáticamente el shapefile de geología dentro de la ruta base
+        # buscar con patrón amplio ('geol') para cubrir nombres como 'geologia_*' o 'geolo_*'
+        ruta_geologia = buscar_archivo_peligro(ruta_base_geologia, "geol", "GEOLOGÍA")
+        if not ruta_geologia:
+            raise FileNotFoundError(f"No se encontró archivo de GEOLOGÍA en: {ruta_base_geologia}")
         gdf_geologia = gpd.read_file(ruta_geologia)
         
         # Convertir a EPSG:3857 si es necesario
@@ -1006,17 +1296,78 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         print(f"      ✅ Geología cargada: {len(gdf_geologia)} registros")
         print(f"      📋 Columnas: {list(gdf_geologia.columns)}")
         
-        # VERIFICAR COLUMNAS
-        if 'PESO_PENDI' not in gdf_pendiente.columns:
-            raise ValueError(f"La columna 'PESO_PENDI' no existe")
-        if 'PESO_GEOMO' not in gdf_geomorfo.columns:
-            raise ValueError(f"La columna 'PESO_GEOMO' no existe")
-        if 'PESO_PPMAX' not in gdf_ppmax.columns:
-            raise ValueError(f"La columna 'PESO_PPMAX' no existe")
-        if 'PESO_RIO' not in gdf_rios.columns:
-            raise ValueError(f"La columna 'PESO_RIO' no existe en el shapefile de ríos")
-        if 'PESO_GEOL' not in gdf_geologia.columns:
-            raise ValueError(f"La columna 'PESO_GEOL' no existe en el shapefile de geología")
+        # VERIFICAR COLUMNAS / NORMALIZAR NOMBRES DE PESO
+        # Algunos shapefiles usan nombres específicos ('PESO', 'Nivel', etc.) — buscar y renombrar si es posible
+        def ensure_weight_column(gdf, expected_name, friendly_layer_name, priority_names=None):
+            if expected_name in gdf.columns:
+                return True
+
+            if priority_names is None:
+                priority_names = []
+
+            # Buscar primero en lista de prioridades
+            for prio_name in priority_names:
+                if prio_name in gdf.columns:
+                    print(f"      ⚠️ No existe '{expected_name}' en {friendly_layer_name} — usando columna encontrada '{prio_name}' como '{expected_name}'")
+                    gdf[expected_name] = gdf[prio_name]
+                    return True
+
+            # Fallback: buscar columnas que contengan 'PESO' (insensible a mayúsculas)
+            candidatos = [c for c in gdf.columns if 'PESO' in c.upper()]
+            if candidatos:
+                elegido = candidatos[0]
+                print(f"      ⚠️ No existe '{expected_name}' en {friendly_layer_name} — usando columna encontrada '{elegido}' como '{expected_name}'")
+                gdf[expected_name] = gdf[elegido]
+                return True
+
+            # no se encontró ninguna columna con 'PESO'
+            return False
+
+        # PENDIENTE: buscar 'PESO' con prioridad
+        if not ensure_weight_column(gdf_pendiente, 'PESO_PENDI', 'PENDIENTE', priority_names=['PESO']):
+            raise ValueError(f"La columna de peso para PENDIENTE no existe. Columnas disponibles: {list(gdf_pendiente.columns)}")
+
+        # GEOMORFOLOGÍA: buscar columnas de peso
+        if not ensure_weight_column(gdf_geomorfo, 'PESO_GEOMO', 'GEOMORFOLOGÍA'):
+            raise ValueError(f"La columna de peso para GEOMORFOLOGÍA no existe. Columnas disponibles: {list(gdf_geomorfo.columns)}")
+
+        # PP MÁXIMA: buscar 'Nivel' con prioridad
+        if not ensure_weight_column(gdf_ppmax, 'PESO_PPMAX', 'PP MÁXIMA', priority_names=['Nivel']):
+            # Si 'Nivel' no está, intentar extraer desde otras columnas categóricas comunes (Clase/Categoria)
+            cat_candidates = [c for c in gdf_ppmax.columns if any(k in c.upper() for k in ['CLAS', 'CATEG', 'CAT', 'LEVEL', 'CLASS'])]
+            if cat_candidates:
+                cat_col = cat_candidates[0]
+                vals = list(gdf_ppmax[cat_col].dropna().unique())
+                # intentar convertir a números si es posible
+                def try_num(x):
+                    try:
+                        return float(x)
+                    except Exception:
+                        return None
+
+                numeric_vals = [try_num(v) for v in vals]
+                if all(v is not None for v in numeric_vals) and len(numeric_vals) > 0:
+                    # usar los valores numéricos como pesos
+                    print(f"      ⚠️ Creando 'PESO_PPMAX' a partir de columna numérica '{cat_col}'")
+                    gdf_ppmax['PESO_PPMAX'] = gdf_ppmax[cat_col].astype(float)
+                else:
+                    # mapear categorías ordenadas a 1..n
+                    unique_sorted = sorted(vals, key=lambda x: str(x))
+                    mapping = {v: i + 1 for i, v in enumerate(unique_sorted)}
+                    print(f"      ⚠️ Creando 'PESO_PPMAX' a partir de columna categórica '{cat_col}' con mapeo: {mapping}")
+                    gdf_ppmax['PESO_PPMAX'] = gdf_ppmax[cat_col].map(mapping).astype(float)
+            else:
+                raise ValueError(f"La columna de peso para PP MÁXIMA no existe. Columnas disponibles: {list(gdf_ppmax.columns)}")
+
+        # PESO_RIO ya debe existir por la lógica anterior (se creó o detectó) — validar igualmente
+        if gdf_rios is not None and 'PESO_RIO' not in gdf_rios.columns:
+            if not ensure_weight_column(gdf_rios, 'PESO_RIO', 'DISTANCIA RÍOS'):
+                # si aún no hay peso, crearlo por defecto
+                print("      ⚠️ No se encontró columna de peso en ríos; se creará 'PESO_RIO' con valor por defecto = 1")
+                gdf_rios['PESO_RIO'] = 1
+
+        if not ensure_weight_column(gdf_geologia, 'PESO_GEOL', 'GEOLOGÍA'):
+            raise ValueError(f"La columna de peso para GEOLOGÍA no existe. Columnas disponibles: {list(gdf_geologia.columns)}")
         
         print(f"\n   ✅ Todas las 5 capas cargadas exitosamente")
         
@@ -1029,38 +1380,104 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     # RECORTAR CAPAS DE PELIGRO AL DISTRITO
     print("\n✂️ Recortando capas de peligro al distrito...")
     try:
+        # Reproyectar todas las capas al CRS del distrito para evitar clips vacíos por CRS mismatched
+        target_crs = gdf_distrito.crs if gdf_distrito is not None and gdf_distrito.crs is not None else 'EPSG:4326'
+
+        def ensure_crs_and_transform(gdf, name):
+            if gdf is None:
+                return None
+            try:
+                if gdf.crs is None:
+                    gdf.set_crs(epsg=4326, inplace=True)
+                if gdf.crs != target_crs:
+                    gdf = gdf.to_crs(target_crs)
+            except Exception as e:
+                print(f"      ⚠️ No se pudo reproyectar {name} a {target_crs}: {e}")
+            return gdf
+
+        gdf_pendiente = ensure_crs_and_transform(gdf_pendiente, 'PENDIENTE')
+        gdf_geomorfo = ensure_crs_and_transform(gdf_geomorfo, 'GEOMORFOLOGÍA')
+        gdf_ppmax = ensure_crs_and_transform(gdf_ppmax, 'PP MÁXIMA')
+        gdf_geologia = ensure_crs_and_transform(gdf_geologia, 'GEOLOGÍA')
+        gdf_rios = ensure_crs_and_transform(gdf_rios, 'RÍOS')
+        gdf_centros_pob = ensure_crs_and_transform(gdf_centros_pob, 'CENTROS_POB')
+
+        # Ahora sí recortar
         gdf_pendiente_clip = gpd.clip(gdf_pendiente, gdf_distrito)
         gdf_geomorfo_clip = gpd.clip(gdf_geomorfo, gdf_distrito)
         gdf_ppmax_clip = gpd.clip(gdf_ppmax, gdf_distrito)
-        gdf_rios_clip = gpd.clip(gdf_rios, gdf_distrito)
         gdf_geologia_clip = gpd.clip(gdf_geologia, gdf_distrito)
+        if gdf_rios is not None:
+            gdf_rios_clip = gpd.clip(gdf_rios, gdf_distrito)
+        else:
+            gdf_rios_clip = None
         
         print(f"   ✅ Capas recortadas exitosamente")
         print(f"      - Pendiente: {len(gdf_pendiente_clip)} registros")
         print(f"      - Geomorfología: {len(gdf_geomorfo_clip)} registros")
         print(f"      - PP Máxima: {len(gdf_ppmax_clip)} registros")
-        print(f"      - Distancia a Ríos: {len(gdf_rios_clip)} registros")
+        if gdf_rios_clip is not None:
+            print(f"      - Distancia a Ríos: {len(gdf_rios_clip)} registros")
+        else:
+            print(f"      - Distancia a Ríos: 0 (omitido)")
         print(f"      - Geología: {len(gdf_geologia_clip)} registros")
         
     except Exception as e:
         print(f"❌ Error recortando capas: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
     # 🆕 COMBINAR LAS CINCO CAPAS MEDIANTE INTERSECCIÓN
     print("\n🔀 Combinando capas de peligro (5 parámetros)...")
     try:
-        # Intersección de las cinco capas
-        print("   [1/5] Intersectando Pendiente ∩ Geomorfología...")
-        gdf_intersect1 = gpd.overlay(gdf_pendiente_clip, gdf_geomorfo_clip, how='intersection')
-        
-        print("   [2/5] Intersectando con PP Máxima...")
-        gdf_intersect2 = gpd.overlay(gdf_intersect1, gdf_ppmax_clip, how='intersection')
-        
-        print("   [3/5] Intersectando con Distancia a Ríos...")
-        gdf_intersect3 = gpd.overlay(gdf_intersect2, gdf_rios_clip, how='intersection')
-        
-        print("   [4/5] Intersectando con Geología...")
-        gdf_peligro = gpd.overlay(gdf_intersect3, gdf_geologia_clip, how='intersection')
+        # Antes de intersectar, garantizar que todas las capas tengan geometrías poligonales y válidas
+        def filter_polygons(gdf, name):
+            if gdf is None:
+                return None
+            try:
+                gdf = gdf[gdf.geometry.notna()].copy()
+                # Intentar corregir geometrías inválidas suavemente
+                try:
+                    invalid_mask = ~gdf.geometry.is_valid
+                    if invalid_mask.any():
+                        gdf.loc[invalid_mask, 'geometry'] = gdf.loc[invalid_mask, 'geometry'].buffer(0)
+                except Exception:
+                    pass
+                # Filtrar por tipo geométrico
+                poly_mask = gdf.geometry.geom_type.isin(['Polygon', 'MultiPolygon'])
+                if not poly_mask.all():
+                    before = len(gdf)
+                    gdf = gdf[poly_mask].copy()
+                    print(f"      ℹ️ Filtradas {before - len(gdf)} geometrías no poligonales en {name}")
+                gdf = gdf.reset_index(drop=True)
+            except Exception as e:
+                print(f"      ⚠️ Error filtrando geometrías en {name}: {e}")
+            return gdf
+
+        gdf_pendiente_clip = filter_polygons(gdf_pendiente_clip, 'PENDIENTE')
+        gdf_geomorfo_clip = filter_polygons(gdf_geomorfo_clip, 'GEOMORFOLOGÍA')
+        gdf_ppmax_clip = filter_polygons(gdf_ppmax_clip, 'PP MÁXIMA')
+        gdf_geologia_clip = filter_polygons(gdf_geologia_clip, 'GEOLOGÍA')
+        if gdf_rios_clip is not None:
+            gdf_rios_clip = filter_polygons(gdf_rios_clip, 'RÍOS')
+
+        # Intersección dinámica de las capas disponibles (omite ríos si fue omitido)
+        gdfs_to_intersect = [gdf_pendiente_clip, gdf_geomorfo_clip, gdf_ppmax_clip]
+        if gdf_rios_clip is not None:
+            gdfs_to_intersect.append(gdf_rios_clip)
+        gdfs_to_intersect.append(gdf_geologia_clip)
+
+        print(f"   🧩 Intersectando {len(gdfs_to_intersect)} capas disponibles...")
+        gdf_inter = gdfs_to_intersect[0]
+        for idx, next_gdf in enumerate(gdfs_to_intersect[1:], start=2):
+            print(f"   [{idx}/{len(gdfs_to_intersect)}] Intersectando capa {idx} de {len(gdfs_to_intersect)}...")
+            if next_gdf is None or len(next_gdf) == 0:
+                print(f"      ⚠️ Capa {idx} vacía; saltando intersección con esta capa")
+                continue
+            gdf_inter = gpd.overlay(gdf_inter, next_gdf, how='intersection')
+
+        gdf_peligro = gdf_inter
         
         # 🆕 VERIFICAR Y LIMPIAR NOMBRES DE COLUMNAS
         print("\n   📋 Verificando columnas después de intersección...")
@@ -1086,49 +1503,101 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
                 col_geol = col
         
         print(f"\n   📊 Columnas identificadas:")
-        print(f"      - Pendiente: {col_pendi}")
-        print(f"      - Geomorfología: {col_geomo}")
-        print(f"      - PP Máxima: {col_ppmax}")
-        print(f"      - Distancia Ríos: {col_rio}")
-        print(f"      - Geología: {col_geol}")
+        # Imprimir solamente las columnas realmente detectadas (evitar None)
+        detected = []
+        if col_pendi:
+            detected.append(("Pendiente", col_pendi))
+        if col_geomo:
+            detected.append(("Geomorfología", col_geomo))
+        if col_ppmax:
+            detected.append(("PP Máxima", col_ppmax))
+        if col_rio:
+            detected.append(("Distancia Ríos", col_rio))
+        if col_geol:
+            detected.append(("Geología", col_geol))
+
+        if detected:
+            for label, cname in detected:
+                print(f"      - {label}: {cname}")
+        else:
+            print("      Ninguna columna de peso identificada (todas None)")
         
-        # Verificar que todas las columnas existen
-        if not all([col_pendi, col_geomo, col_ppmax, col_rio, col_geol]):
-            raise ValueError(f"No se encontraron todas las columnas de peso necesarias")
+        # Verificar cuáles parámetros tenemos presentes y obtener sus columnas
+        present_cols = {}
+        weights_map = {
+            'PENDI': 0.5,
+            'GEOMO': 0.5,
+            'PPMAX': 1.0,
+            'RIO': 2.5,
+            'GEOL': 0.5
+        }
+
+        if col_pendi:
+            present_cols['PENDI'] = col_pendi
+        if col_geomo:
+            present_cols['GEOMO'] = col_geomo
+        if col_ppmax:
+            present_cols['PPMAX'] = col_ppmax
+        if col_rio:
+            present_cols['RIO'] = col_rio
+        if col_geol:
+            present_cols['GEOL'] = col_geol
+
+        if not present_cols:
+            raise ValueError("No se encontraron columnas de peso válidas tras la intersección")
         
-        # 🆕 CALCULAR EL ÍNDICE DE PELIGRO CON 5 PARÁMETROS
-        print("\n   [5/5] Calculando índice de peligro...")
-        gdf_peligro['PELIGRO'] = (
-            0.5*gdf_peligro[col_pendi] + 
-            0.5*gdf_peligro[col_geomo] + 
-            1.0*gdf_peligro[col_ppmax] +
-            2.5*gdf_peligro[col_rio] +
-            0.5*gdf_peligro[col_geol]
-        ) / 5.0
-        
-        # 🆕 MOSTRAR ESTADÍSTICAS DETALLADAS DE CADA PARÁMETRO
-        print(f"\n   📊 Estadísticas ANTES del promedio:")
-        print(f"      - Pendiente: min={gdf_peligro[col_pendi].min():.2f}, max={gdf_peligro[col_pendi].max():.2f}, media={gdf_peligro[col_pendi].mean():.2f}")
-        print(f"      - Geomorfología: min={gdf_peligro[col_geomo].min():.2f}, max={gdf_peligro[col_geomo].max():.2f}, media={gdf_peligro[col_geomo].mean():.2f}")
-        print(f"      - PP Máxima: min={gdf_peligro[col_ppmax].min():.2f}, max={gdf_peligro[col_ppmax].max():.2f}, media={gdf_peligro[col_ppmax].mean():.2f}")
-        print(f"      - Distancia Ríos: min={gdf_peligro[col_rio].min():.2f}, max={gdf_peligro[col_rio].max():.2f}, media={gdf_peligro[col_rio].mean():.2f}")
-        print(f"      - Geología: min={gdf_peligro[col_geol].min():.2f}, max={gdf_peligro[col_geol].max():.2f}, media={gdf_peligro[col_geol].mean():.2f}")
+        # 🆕 CALCULAR EL ÍNDICE DE PELIGRO (ponderación dinámica según parámetros disponibles)
+        print("\n   [5/5] Calculando índice de peligro (ponderación dinámica)...")
+
+        # Sumar los pesos disponibles
+        peso_total = sum(weights_map[k] for k in present_cols.keys())
+        if peso_total <= 0:
+            raise ValueError("Peso total inválido (0) — no hay parámetros disponibles para calcular peligro")
+
+        # Construir la suma ponderada de forma dinámica
+        suma_expresion = None
+        for key, colname in present_cols.items():
+            w = weights_map.get(key, 1.0)
+            if suma_expresion is None:
+                suma_expresion = w * gdf_peligro[colname]
+            else:
+                suma_expresion = suma_expresion + w * gdf_peligro[colname]
+
+        gdf_peligro['PELIGRO'] = suma_expresion / float(peso_total)
+
+        # 🆕 MOSTRAR ESTADÍSTICAS PARA LOS PARÁMETROS DISPONIBLES
+        print(f"\n   📊 Estadísticas ANTES del promedio (parámetros disponibles):")
+        for key, colname in present_cols.items():
+            try:
+                print(f"      - {key}: min={gdf_peligro[colname].min():.2f}, max={gdf_peligro[colname].max():.2f}, media={gdf_peligro[colname].mean():.2f}")
+            except Exception:
+                print(f"      - {key}: (error leyendo estadísticas para columna {colname})")
         
         print(f"\n   📊 Estadísticas DESPUÉS del promedio (PELIGRO):")
-        print(f"      - Peligro Final: min={gdf_peligro['PELIGRO'].min():.3f}, max={gdf_peligro['PELIGRO'].max():.3f}, media={gdf_peligro['PELIGRO'].mean():.3f}")
+        # Evitar errores con valores NaN o cuando no hay registros
+        pel = gdf_peligro['PELIGRO'].dropna()
+        if len(pel) > 0:
+            print(f"      - Peligro Final: min={pel.min():.3f}, max={pel.max():.3f}, media={pel.mean():.3f}")
+        else:
+            print("      - Peligro Final: no hay valores válidos (todos NaN o dataset vacío)")
         
         # 🆕 MOSTRAR DISTRIBUCIÓN POR NIVEL DE PELIGRO
         print(f"\n   📊 Distribución por nivel de peligro:")
-        nivel_baja = len(gdf_peligro[(gdf_peligro['PELIGRO'] >= 1.0) & (gdf_peligro['PELIGRO'] < 2.0)])
-        nivel_media = len(gdf_peligro[(gdf_peligro['PELIGRO'] >= 2.0) & (gdf_peligro['PELIGRO'] < 3.0)])
-        nivel_alta = len(gdf_peligro[(gdf_peligro['PELIGRO'] >= 3.0) & (gdf_peligro['PELIGRO'] < 4.0)])
-        nivel_muy_alta = len(gdf_peligro[(gdf_peligro['PELIGRO'] >= 4.0) & (gdf_peligro['PELIGRO'] <= 5.0)])
-        
-        total = len(gdf_peligro)
-        print(f"      - Baja (1.0-2.0):      {nivel_baja:5d} polígonos ({100*nivel_baja/total:5.1f}%)")
-        print(f"      - Media (2.0-3.0):     {nivel_media:5d} polígonos ({100*nivel_media/total:5.1f}%)")
-        print(f"      - Alta (3.0-4.0):      {nivel_alta:5d} polígonos ({100*nivel_alta/total:5.1f}%)")
-        print(f"      - Muy Alta (4.0-5.0):  {nivel_muy_alta:5d} polígonos ({100*nivel_muy_alta/total:5.1f}%)")
+        # Utilizar sólo valores válidos de PELIGRO para la distribución
+        pel_valid = pel
+        nivel_baja = len(pel_valid[(pel_valid >= 1.0) & (pel_valid < 2.0)])
+        nivel_media = len(pel_valid[(pel_valid >= 2.0) & (pel_valid < 3.0)])
+        nivel_alta = len(pel_valid[(pel_valid >= 3.0) & (pel_valid < 4.0)])
+        nivel_muy_alta = len(pel_valid[(pel_valid >= 4.0) & (pel_valid <= 5.0)])
+
+        total = len(pel_valid)
+        def pct(n):
+            return (100.0 * n / total) if total > 0 else 0.0
+
+        print(f"      - Baja (1.0-2.0):      {nivel_baja:5d} polígonos ({pct(nivel_baja):5.1f}%)")
+        print(f"      - Media (2.0-3.0):     {nivel_media:5d} polígonos ({pct(nivel_media):5.1f}%)")
+        print(f"      - Alta (3.0-4.0):      {nivel_alta:5d} polígonos ({pct(nivel_alta):5.1f}%)")
+        print(f"      - Muy Alta (4.0-5.0):  {nivel_muy_alta:5d} polígonos ({pct(nivel_muy_alta):5.1f}%)")
         
         # Asignar colores según el nivel de peligro
         gdf_peligro['COLOR'] = gdf_peligro['PELIGRO'].apply(asignar_color_peligro)
@@ -1336,8 +1805,8 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
 if __name__ == "__main__":
     # EJEMPLO DE USO
     generar_mapa_peligro(
-        nombre_usuario="USUARIO_TEST",
-        departamento_sel="CUSCO",
-        provincia_sel="ANTA",
-        distrito_sel="PUCYURA"
+        nombre_usuario="USUARIO_TEST3",
+        departamento_sel="PIURA",
+        provincia_sel="SECHURA",
+        distrito_sel="SECHURA"
     )

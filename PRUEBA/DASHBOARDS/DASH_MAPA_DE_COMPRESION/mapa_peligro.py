@@ -40,7 +40,14 @@ except ImportError:
 # --- CONFIGURACIÓN GLOBAL ---
 ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 AMARILLO_CLARO = "#FFEE58"
-# RUTAS BASE DE LAS CAPAS DE PELIGRO
+
+# MAPEO DE DEMS POR DEPARTAMENTO (cada departamento tiene su propio DEM)
+DEMS_POR_DEPARTAMENTO = {
+    'PIURA': f"{ruta_base}/DATA/PELIGRO/INUNDACION_PLUVIAL/PIURA_DEPARTAMENTO/DATOS_GENERALES/DISTANCIA_RIO/Piura_DEM_30m_MAX_RESOLUCION.tif",
+    'CUSCO': f"{ruta_base}/DATA/PELIGRO/INUNDACION_PLUVIAL/CUSCO_DEPARTAMENTO/DATOS_GENERALES/DISTANCIA_RIO/DEM.tif",
+}
+
+# RUTAS BASE DE LAS CAPAS DE PELIGRO (por defecto CUSCO, serán sobrescritas dinámicamente)
 RUTA_BASE_PENDIENTE = f"{ruta_base}/DATA/PELIGRO/PENDIENTE"
 RUTA_BASE_GEOMORFOLOGIA = f"{ruta_base}/DATA/PELIGRO/INUNDACION_PLUVIAL/CUSCO_DEPARTAMENTO/ANTA_PROVINCIA/GEOMORFOLOGIA"
 RUTA_BASE_PPMAX = f"{ruta_base}/DATA/PELIGRO/INUNDACION_PLUVIAL/CUSCO_DEPARTAMENTO/DATOS_GENERALES/PP_MAX"
@@ -58,13 +65,16 @@ def get_rutas_peligro(departamento_sel, provincia_sel):
     dpto = (departamento_sel or "").strip().upper()
     prov = (provincia_sel or "").strip().upper()
 
+    # Obtener DEM del departamento desde el mapeo
+    ruta_dem_dpto = DEMS_POR_DEPARTAMENTO.get(dpto, RUTA_DEM)
+
     # Ruta por defecto (las ya configuradas para CUSCO/ANTA)
     rutas = {
         'RUTA_BASE_PENDIENTE': RUTA_BASE_PENDIENTE,
         'RUTA_BASE_GEOMORFOLOGIA': RUTA_BASE_GEOMORFOLOGIA,
         'RUTA_BASE_PPMAX': RUTA_BASE_PPMAX,
         'RUTA_BASE_GEOLOGIA': RUTA_BASE_GEOLOGIA,
-        'RUTA_DEM': RUTA_DEM
+        'RUTA_DEM': ruta_dem_dpto  # Usar DEM específico del departamento
     }
 
     # Excepciones/estructura de carpetas conocida para PIURA
@@ -77,7 +87,7 @@ def get_rutas_peligro(departamento_sel, provincia_sel):
         rutas['RUTA_BASE_GEOLOGIA'] = base
         rutas['RUTA_BASE_PPMAX'] = os.path.join(base, 'DATOS_GENERALES', 'PP_MAX')
         rutas['RUTA_BASE_PENDIENTE'] = os.path.join(base, 'DATOS_GENERALES', 'PENDIENTE')
-        rutas['RUTA_DEM'] = os.path.join(base, 'DATOS_GENERALES', 'DISTANCIA_RIO')
+        rutas['RUTA_DEM'] = ruta_dem_dpto  # Usar DEM específico de PIURA
 
     return rutas
 
@@ -910,18 +920,33 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
     ax.set_aspect('equal', adjustable='box')
     ax.axis('on')
 
-def buscar_archivo_peligro(ruta_base, patron_busqueda, tipo_capa):
-    """Busca archivos de peligro de forma inteligente"""
+def buscar_archivo_peligro(ruta_base, patron_busqueda, tipo_capa, provincia_sel=None):
+    """Busca archivos de peligro de forma inteligente, priorizando por provincia si se especifica"""
     print(f"   🔍 Buscando {tipo_capa} en: {ruta_base}")
     
     archivos_encontrados = []
+    archivos_provincia = []
     
     for root, dirs, files in os.walk(ruta_base):
         for file in files:
             if file.lower().endswith('.shp') and patron_busqueda.lower() in file.lower():
                 ruta_completa = os.path.join(root, file)
                 archivos_encontrados.append(ruta_completa)
-                print(f"      ✅ Encontrado: {ruta_completa}")
+                
+                # Si se especifica provincia, priorizar archivos que la contengan en el nombre o ruta
+                if provincia_sel:
+                    provincia_norm = provincia_sel.lower().replace(' ', '_')
+                    if provincia_norm in ruta_completa.lower() or provincia_norm in file.lower():
+                        archivos_provincia.append(ruta_completa)
+                        print(f"      ✅ Encontrado (provincia): {ruta_completa}")
+                    else:
+                        print(f"      ℹ️ Encontrado (otros): {ruta_completa}")
+                else:
+                    print(f"      ✅ Encontrado: {ruta_completa}")
+    
+    # Priorizar archivos de la provincia si existen
+    if archivos_provincia:
+        return archivos_provincia[0]
     
     if not archivos_encontrados:
         print(f"      ❌ No se encontraron archivos para {tipo_capa}")
@@ -1279,8 +1304,8 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         # 5️⃣ 🆕 GEOLOGÍA
         print(f"\n   🔍 Cargando capa de GEOLOGÍA...")
         # Buscar automáticamente el shapefile de geología dentro de la ruta base
-        # buscar con patrón amplio ('geol') para cubrir nombres como 'geologia_*' o 'geolo_*'
-        ruta_geologia = buscar_archivo_peligro(ruta_base_geologia, "geol", "GEOLOGÍA")
+        # Priorizar por provincia para distritos en diferentes provincias
+        ruta_geologia = buscar_archivo_peligro(ruta_base_geologia, "geol", "GEOLOGÍA", provincia_sel=provincia_sel)
         if not ruta_geologia:
             raise FileNotFoundError(f"No se encontró archivo de GEOLOGÍA en: {ruta_base_geologia}")
         gdf_geologia = gpd.read_file(ruta_geologia)
@@ -1364,7 +1389,8 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
                 print("      ⚠️ No se encontró columna de peso en ríos; se creará 'PESO_RIO' con valor por defecto = 1")
                 gdf_rios['PESO_RIO'] = 1
 
-        if not ensure_weight_column(gdf_geologia, 'PESO_GEOL', 'GEOLOGÍA'):
+        # GEOLOGÍA: buscar primero 'PESO_GEOL' (columna correcta), luego fallback a 'PESO_GEOMO'
+        if not ensure_weight_column(gdf_geologia, 'PESO_GEOL', 'GEOLOGÍA', priority_names=['PESO_GEOL', 'PESO_GEOMO']):
             raise ValueError(f"La columna de peso para GEOLOGÍA no existe. Columnas disponibles: {list(gdf_geologia.columns)}")
         
         print(f"\n   ✅ Todas las 5 capas cargadas exitosamente")
@@ -1500,7 +1526,8 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
 
         # Buscar columnas por prioridad para evitar capturar la primera columna que contenga sólo 'PESO'
         col_geomo = find_col_by_keywords(cols_list, keywords_all=['PESO','GEOMO'], keywords_any=['GEOMO','PESO']) or find_col_by_keywords(cols_list, keywords_any=['GEOMO'])
-        col_geol  = find_col_by_keywords(cols_list, keywords_all=['PESO','GEOL'],  keywords_any=['GEOL','PESO']) or find_col_by_keywords(cols_list, keywords_any=['GEOL'])
+        # Para Geología, buscar primero PESO_GEOL (la correcta), luego PESO_GEOMO como fallback
+        col_geol  = find_col_by_keywords(cols_list, keywords_all=['PESO','GEOL'], keywords_any=['GEOL']) or find_col_by_keywords(cols_list, keywords_any=['GEOL','GEOMO'])
         col_rio   = find_col_by_keywords(cols_list, keywords_all=['PESO','RIO'],  keywords_any=['RIO','PESO']) or find_col_by_keywords(cols_list, keywords_any=['RIO'])
         col_ppmax = find_col_by_keywords(cols_list, keywords_any=['NIVEL','LEVEL','PP','TR50','PRECIP'])
 
@@ -1589,7 +1616,79 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             print(f"      - Peligro Final: min={pel.min():.3f}, max={pel.max():.3f}, media={pel.mean():.3f}")
         else:
             print("      - Peligro Final: no hay valores válidos (todos NaN o dataset vacío)")
-        
+            # Si la intersección arrojó 0 polígonos, crear fallback agregado por distrito
+            try:
+                print("      ℹ️ Intersección vacía — creando polígono agregado a nivel distrital como fallback")
+
+                def area_weighted_mean(gdf, col):
+                    if gdf is None or len(gdf) == 0:
+                        return None
+                    try:
+                        tmp = gdf.copy()
+                        tmp['__area__'] = tmp.geometry.area
+                        total_area = tmp['__area__'].sum()
+                        if total_area <= 0:
+                            return None
+                        vals = tmp[col].astype(float).fillna(0)
+                        return (vals * tmp['__area__']).sum() / total_area
+                    except Exception:
+                        return None
+
+                # Calcular medias ponderadas por área para cada capa usando los GDF recortados
+                fallback_vals = {}
+                try:
+                    if 'PESO' in gdf_pendiente_clip.columns:
+                        v = area_weighted_mean(gdf_pendiente_clip, 'PESO')
+                        if v is not None: fallback_vals['PENDI'] = v
+                except Exception:
+                    pass
+                try:
+                    if 'PESO_GEOMO' in gdf_geomorfo_clip.columns:
+                        v = area_weighted_mean(gdf_geomorfo_clip, 'PESO_GEOMO')
+                        if v is not None: fallback_vals['GEOMO'] = v
+                except Exception:
+                    pass
+                try:
+                    if 'Nivel' in gdf_ppmax_clip.columns:
+                        v = area_weighted_mean(gdf_ppmax_clip, 'Nivel')
+                        if v is not None: fallback_vals['PPMAX'] = v
+                except Exception:
+                    pass
+                try:
+                    if gdf_rios_clip is not None and 'PESO_RIO' in gdf_rios_clip.columns:
+                        v = area_weighted_mean(gdf_rios_clip, 'PESO_RIO')
+                        if v is not None: fallback_vals['RIO'] = v
+                except Exception:
+                    pass
+                try:
+                    if 'PESO_GEOL' in gdf_geologia_clip.columns:
+                        v = area_weighted_mean(gdf_geologia_clip, 'PESO_GEOL')
+                        if v is not None: fallback_vals['GEOL'] = v
+                except Exception:
+                    pass
+
+                if not fallback_vals:
+                    print("      ⚠️ No hay valores disponibles en las capas para crear el fallback agregado")
+                else:
+                    # Combinar según weights_map
+                    peso_total_fb = sum(weights_map.get(k, 1.0) for k in fallback_vals.keys())
+                    suma_fb = sum((weights_map.get(k, 1.0) * fallback_vals[k]) for k in fallback_vals.keys())
+                    peligro_agg = suma_fb / float(peso_total_fb) if peso_total_fb > 0 else None
+
+                    # Crear GeoDataFrame con la geometría del distrito (unión) y el valor agregado
+                    geom_union = gdf_distrito.geometry.unary_union
+                    gdf_peligro = gpd.GeoDataFrame(
+                        {k: [v] for k, v in fallback_vals.items()},
+                        geometry=[geom_union],
+                        crs=gdf_distrito.crs
+                    )
+                    gdf_peligro['PELIGRO'] = peligro_agg
+                    gdf_peligro['COLOR'] = gdf_peligro['PELIGRO'].apply(asignar_color_peligro)
+
+                    print(f"      ✅ Fallback agregado calculado: PELIGRO={peligro_agg:.3f} basado en {list(fallback_vals.keys())}")
+            except Exception as e:
+                print(f"      ⚠️ Falló la creación del fallback agregado: {e}")
+
         # 🆕 MOSTRAR DISTRIBUCIÓN POR NIVEL DE PELIGRO
         print(f"\n   📊 Distribución por nivel de peligro:")
         # Utilizar sólo valores válidos de PELIGRO para la distribución
@@ -1814,7 +1913,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
 if __name__ == "__main__":
     # EJEMPLO DE USO
     generar_mapa_peligro(
-        nombre_usuario="USUARIO_TEST2",
+        nombre_usuario="USUARIO_TEST21",
         departamento_sel="PIURA",
         provincia_sel="PIURA",
         distrito_sel="PIURA"

@@ -1,4 +1,4 @@
-# Archivo: geomorfologia_final.py
+# Archivo: geomorfologia_final_modificado.py
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -77,6 +77,27 @@ def cargar_geomorfologia(departamento):
         print(f"   Error cargando geomorfología: {e}")
         import traceback
         traceback.print_exc()
+        return None
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 🏘️ NUEVA FUNCIÓN PARA CARGAR CENTROS POBLADOS (IMPLEMENTADA SEGÚN SOLICITUD)
+# ═══════════════════════════════════════════════════════════════════════════════
+def cargar_centros_poblados():
+    """Carga el shapefile de Centros Poblados del INEI"""
+    ruta = f"{ruta_base}/DATA/CENTROS_POBLADOS/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp"
+    if not os.path.exists(ruta):
+        print(f"   ❌ Advertencia: Archivo de Centros Poblados no encontrado en {ruta}")
+        return None
+    try:
+        gdf_ccpp = gpd.read_file(ruta)
+        # Asumiendo CRS 4326 si no está definido o es diferente, luego proyectando a 3857
+        if gdf_ccpp.crs is None or gdf_ccpp.crs.to_epsg() != 4326:
+            gdf_ccpp.set_crs(epsg=4326, inplace=True)
+        gdf_ccpp = gdf_ccpp.to_crs(epsg=3857)
+        print(f"   ✅ Centros Poblados cargados: {len(gdf_ccpp)} puntos")
+        return gdf_ccpp
+    except Exception as e:
+        print(f"   Error cargando Centros Poblados: {e}")
         return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -417,6 +438,25 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
         import traceback
         traceback.print_exc()
         return None
+        
+    # 🏘️ PASOS PARA CENTROS POBLADOS (IMPLEMENTADO SEGÚN SOLICITUD)
+    print("\n Cargando Centros Poblados...")
+    gdf_centros_poblados = cargar_centros_poblados()
+    gdf_ccpp_clipped = gpd.GeoDataFrame()
+    col_ccpp_etiqueta = 'etiqueta' # Columna solicitada por el usuario
+    
+    if gdf_centros_poblados is not None and col_ccpp_etiqueta in gdf_centros_poblados.columns:
+        print("   Recortando Centros Poblados al área del distrito...")
+        try:
+            # Asegurar que el recorte se hace sobre la geometría del distrito
+            gdf_ccpp_clipped = gpd.clip(gdf_centros_poblados, gdf_distrito.geometry.iloc[0])
+            print(f"   ✅ Centros Poblados recortados: {len(gdf_ccpp_clipped)} puntos encontrados")
+        except Exception as e:
+            print(f"   Error al recortar Centros Poblados: {e}")
+            gdf_ccpp_clipped = gpd.GeoDataFrame()
+    else:
+        print("   ❌ Advertencia: Centros Poblados no cargados o columna 'etiqueta' faltante.")
+
     
     print("\n Generando layout del mapa...")
     fig = plt.figure(figsize=(14, 9.9))
@@ -472,6 +512,27 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
         gdf_unidad = gdf_geomorfo_clipped[gdf_geomorfo_clipped[col_geomorfo] == unidad]
         gdf_unidad.plot(ax=ax_main, color=paleta_geomorfo[idx], edgecolor='black',
                        linewidth=0.5, alpha=0.7, zorder=4)
+                       
+    # 🏘️ DIBUJANDO CENTROS POBLADOS Y ETIQUETAS (IMPLEMENTADO SEGÚN SOLICITUD)
+    if not gdf_ccpp_clipped.empty:
+        print("   Dibujando Centros Poblados...")
+        
+        # Puntos pequeños color negro
+        gdf_ccpp_clipped.plot(ax=ax_main, marker='o', color='black', markersize=4, zorder=10)
+        
+        # Etiquetas (columna 'etiqueta', letra pequeña color negro)
+        for idx, row in gdf_ccpp_clipped.iterrows():
+            if col_ccpp_etiqueta in row and row[col_ccpp_etiqueta] is not None:
+                # Utilizamos un path_effect con borde blanco para que la etiqueta sea legible
+                # sobre el mapa base satelital.
+                ax_main.text(row.geometry.x, row.geometry.y, 
+                             str(row[col_ccpp_etiqueta]), 
+                             fontsize=5.5, # Letra pequeña
+                             color='black', # Color negro
+                             ha='left', va='center',
+                             path_effects=[path_effects.withStroke(linewidth=0.8, foreground='white')],
+                             zorder=11)
+
     
     gdf_distrito.plot(ax=ax_main, facecolor="none", edgecolor="red", linewidth=2,
                      linestyle='--', alpha=0.9, zorder=15)
@@ -506,6 +567,12 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
             legend_elements.append(Patch(facecolor='white', edgecolor='white',
                                          label=f'(+{len(unidades_geomorfo)-max_items_leyenda} más)',
                                          linewidth=0))
+    
+    # 🏘️ NUEVO ELEMENTO DE LEYENDA (IMPLEMENTADO SEGÚN SOLICITUD)
+    if not gdf_ccpp_clipped.empty:
+        legend_elements.append(Patch(facecolor='white', edgecolor='white', label='', linewidth=0))
+        legend_elements.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='black', 
+                                     markersize=4, label='Centros Poblados', linestyle='None'))
     
     legend_elements.extend([
         Patch(facecolor='white', edgecolor='white', label='', linewidth=0),

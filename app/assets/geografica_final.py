@@ -652,7 +652,8 @@ def generar_mapa_final(nombre_usuario, departamento_sel, provincia_sel, distrito
     # ═══════════════════════════════════════════════════════════════════════════
     # 🏔️ CARGAR Y MOSTRAR HILLSHADE EN VEZ DE IMAGEN SATELITAL
     # ═══════════════════════════════════════════════════════════════════════════
-    ruta_dem = f"{ruta_base}/DATA/MAPA_DE_UBICACION/RELIVE/DEM.tif"
+
+    ruta_dem = f"{ruta_base}/DATA/PENDIENTES/DEM.tif"
     hillshade, transform, extent = cargar_dem_y_hillshade(ruta_dem, bbox_main)
     
     if hillshade is not None and extent is not None:

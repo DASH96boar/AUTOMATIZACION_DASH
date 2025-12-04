@@ -1,4 +1,4 @@
-# Archivo: geomorfologia_final_modificado.py
+# Archivo: geomorfologia_final_modificado_con_etiquetas.py
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -6,7 +6,7 @@ import contextily as ctx
 from matplotlib_scalebar.scalebar import ScaleBar
 import os
 import numpy as np
-import matplotlib.patheffects as path_effects
+import matplotlib.patheffects as path_effects # 👈 Importante para el contorno de texto
 from shapely.geometry import box
 import pyproj
 from matplotlib.ticker import FuncFormatter
@@ -21,7 +21,7 @@ ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 AMARILLO_CLARO = "#FFEE58"
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 🎨 FUNCIÓN PARA GENERAR PALETA DE COLORES
+# 🎨 FUNCIÓN PARA GENERAR PALETA DE COLORES (SIN CAMBIOS)
 # ═══════════════════════════════════════════════════════════════════════════════
 def generar_paleta_geomorfologia(num_categorias):
     """Genera una paleta de colores distintiva para geomorfología"""
@@ -43,7 +43,7 @@ def generar_paleta_geomorfologia(num_categorias):
         return colores_base + colores_extra
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 🌄 FUNCIÓN PARA CARGAR GEOMORFOLOGÍA
+# 🌄 FUNCIÓN PARA CARGAR GEOMORFOLOGÍA (SIN CAMBIOS)
 # ═══════════════════════════════════════════════════════════════════════════════
 def cargar_geomorfologia(departamento):
     """Carga el shapefile de geomorfología según el departamento seleccionado"""
@@ -80,7 +80,7 @@ def cargar_geomorfologia(departamento):
         return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 🏘️ NUEVA FUNCIÓN PARA CARGAR CENTROS POBLADOS (IMPLEMENTADA SEGÚN SOLICITUD)
+# 🏘️ FUNCIÓN PARA CARGAR CENTROS POBLADOS (NUEVA)
 # ═══════════════════════════════════════════════════════════════════════════════
 def cargar_centros_poblados():
     """Carga el shapefile de Centros Poblados del INEI"""
@@ -101,7 +101,7 @@ def cargar_centros_poblados():
         return None
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FUNCIONES AUXILIARES
+# FUNCIONES AUXILIARES (SIN CAMBIOS SIGNIFICATIVOS)
 # ═══════════════════════════════════════════════════════════════════════════════
 def add_north_arrow_blanco_completo(ax, xy_pos=(0.93, 0.08), size=0.06):
     x_pos, y_pos = xy_pos
@@ -428,6 +428,12 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
             col_geomorfo = gdf_geomorfo_clipped.columns[0]
             print(f"   No se encontró columna estándar, usando: {col_geomorfo}")
         
+        # Verificar que la columna de etiqueta exista, si no, se usará el nombre de la unidad.
+        col_geomorfo_etiqueta = 'etiqueta'
+        if col_geomorfo_etiqueta not in gdf_geomorfo_clipped.columns:
+            print(f"   Advertencia: Columna '{col_geomorfo_etiqueta}' no encontrada en Geomorfología. Se usará '{col_geomorfo}' para etiquetar.")
+            col_geomorfo_etiqueta = col_geomorfo
+        
         unidades_geomorfo = sorted(gdf_geomorfo_clipped[col_geomorfo].dropna().unique())
         paleta_geomorfo = generar_paleta_geomorfologia(len(unidades_geomorfo))
         
@@ -439,11 +445,11 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
         traceback.print_exc()
         return None
         
-    # 🏘️ PASOS PARA CENTROS POBLADOS (IMPLEMENTADO SEGÚN SOLICITUD)
+    # 🏘️ PASOS PARA CENTROS POBLADOS 
     print("\n Cargando Centros Poblados...")
     gdf_centros_poblados = cargar_centros_poblados()
     gdf_ccpp_clipped = gpd.GeoDataFrame()
-    col_ccpp_etiqueta = 'etiqueta' # Columna solicitada por el usuario
+    col_ccpp_etiqueta = 'etiqueta' 
     
     if gdf_centros_poblados is not None and col_ccpp_etiqueta in gdf_centros_poblados.columns:
         print("   Recortando Centros Poblados al área del distrito...")
@@ -456,7 +462,6 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
             gdf_ccpp_clipped = gpd.GeoDataFrame()
     else:
         print("   ❌ Advertencia: Centros Poblados no cargados o columna 'etiqueta' faltante.")
-
     
     print("\n Generando layout del mapa...")
     fig = plt.figure(figsize=(14, 9.9))
@@ -473,7 +478,7 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
     ax_main = fig.add_subplot(gs_izquierda[1])
     
     # ═══════════════════════════════════════════════════════════════════════════
-    # BBOX CON ASPECT RATIO CONSISTENTE (ESTRUCTURA DE poblacion_final.py)
+    # BBOX CON ASPECT RATIO CONSISTENTE (SIN CAMBIOS)
     # ═══════════════════════════════════════════════════════════════════════════
     minx, miny, maxx, maxy = gdf_distrito.total_bounds
     buffer_factor = 0.15
@@ -513,7 +518,27 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
         gdf_unidad.plot(ax=ax_main, color=paleta_geomorfo[idx], edgecolor='black',
                        linewidth=0.5, alpha=0.7, zorder=4)
                        
-    # 🏘️ DIBUJANDO CENTROS POBLADOS Y ETIQUETAS (IMPLEMENTADO SEGÚN SOLICITUD)
+    # ⛰️ DIBUJANDO ETIQUETAS DE GEOMORFOLOGÍA (IMPLEMENTADO SEGÚN SOLICITUD)
+    if col_geomorfo_etiqueta in gdf_geomorfo_clipped.columns:
+        print("   Dibujando etiquetas de Geomorfología...")
+        for idx, row in gdf_geomorfo_clipped.iterrows():
+            etiqueta = str(row[col_geomorfo_etiqueta])
+            # Se añade condición para ignorar valores vacíos o 'nan'
+            if etiqueta and etiqueta.strip() not in ('None', 'nan', ''):
+                try:
+                    # Usar el centroide del polígono para posicionar la etiqueta
+                    centroide = row.geometry.centroid
+                    ax_main.text(centroide.x, centroide.y, 
+                                 etiqueta, 
+                                 fontsize=6.5, # Tamaño de letra adecuado para polígonos
+                                 color='black', # Color negro
+                                 ha='center', va='center',
+                                 path_effects=[path_effects.withStroke(linewidth=1.5, foreground='white')],
+                                 zorder=6) # Zorder 6 para estar sobre el relleno pero bajo los CCPP
+                except Exception:
+                    pass # Ignorar polígonos con centroides inválidos
+                       
+    # 🏘️ DIBUJANDO CENTROS POBLADOS Y ETIQUETAS (NUEVA IMPLEMENTACIÓN)
     if not gdf_ccpp_clipped.empty:
         print("   Dibujando Centros Poblados...")
         
@@ -523,15 +548,18 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
         # Etiquetas (columna 'etiqueta', letra pequeña color negro)
         for idx, row in gdf_ccpp_clipped.iterrows():
             if col_ccpp_etiqueta in row and row[col_ccpp_etiqueta] is not None:
-                # Utilizamos un path_effect con borde blanco para que la etiqueta sea legible
-                # sobre el mapa base satelital.
                 ax_main.text(row.geometry.x, row.geometry.y, 
                              str(row[col_ccpp_etiqueta]), 
-                             fontsize=5.5, # Letra pequeña
+                             fontsize=5.5, # Letra más pequeña que geomorfología
                              color='black', # Color negro
                              ha='left', va='center',
                              path_effects=[path_effects.withStroke(linewidth=0.8, foreground='white')],
                              zorder=11)
+        
+        # Añadir elemento a la leyenda si hay CCPP
+        legend_elements.append(Patch(facecolor='white', edgecolor='white', label='', linewidth=0))
+        legend_elements.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='black', 
+                                     markersize=4, label='Centros Poblados', linestyle='None'))
 
     
     gdf_distrito.plot(ax=ax_main, facecolor="none", edgecolor="red", linewidth=2,
@@ -568,7 +596,7 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
                                          label=f'(+{len(unidades_geomorfo)-max_items_leyenda} más)',
                                          linewidth=0))
     
-    # 🏘️ NUEVO ELEMENTO DE LEYENDA (IMPLEMENTADO SEGÚN SOLICITUD)
+    # Se re-añade el elemento de CCPP si existe, ya que legend_elements se reinició
     if not gdf_ccpp_clipped.empty:
         legend_elements.append(Patch(facecolor='white', edgecolor='white', label='', linewidth=0))
         legend_elements.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='black', 
@@ -637,7 +665,7 @@ def generar_mapa_geomorfologia(nombre_usuario, departamento_sel, provincia_sel, 
     
     print("\n Guardando mapa final en carpeta de usuario...")
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    nombre_base = f"MAPA_GEOMORFOLOGIA_{distrito_sel.replace(' ', '_')}_{timestamp}.png"
+    nombre_base = f"MAPA_GEOMORFOLOGIA_{distrito_sel.replace(' ', '_')}_CON_ETIQUETAS_{timestamp}.png"
     ruta_guardado_final = os.path.join(carpeta_salida, nombre_base)
     
     try:

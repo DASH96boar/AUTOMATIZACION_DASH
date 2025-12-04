@@ -510,32 +510,12 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
                 except Exception:
                     pass
 
-                # Estrategia de fallback: crear una capa de RÍOS sintética usando la geometría
-                # del límite del distrito con PESO_RIO=1 para permitir que el resto del flujo
-                # de trabajo continúe y genere un mapa incluso sin red real de ríos.
-                try:
-                    print("      ℹ️ Creando capa de fallback para RÍOS (PESO_RIO=1) usando geometría distrital")
-                    # limit_final está definido en el scope superior y contiene la geometría en CRS del DEM
-                    geom_union = limit_final.geometry.unary_union if hasattr(limit_final, 'geometry') else limit.geometry.unary_union
-                    area_km2 = geom_union.area / 1_000_000 if hasattr(geom_union, 'area') else 0
-                    gdf_rios_fallback = gpd.GeoDataFrame(
-                        {
-                            'clase': ['no_rio'],
-                            'dist_min_m': [999999],
-                            'dist_max_m': [999999],
-                            'area_km2': [round(area_km2, 4)],
-                            'PESO_RIO': [1]
-                        },
-                        geometry=[geom_union],
-                        crs=limit_final.crs if hasattr(limit_final, 'crs') else None
-                    )
-
-                    # asignar a variable local que luego será usada por el flujo principal
-                    rivers_clip = gdf_rios_fallback
-                    print(f"      ✅ Capa fallback creada: {len(rivers_clip)} geometría(s) con PESO_RIO=1")
-                except Exception as e:
-                    print(f"      ⚠️ Falló la creación del fallback de ríos: {e}")
-                    return None
+                # El fallback se maneja en [3/6], no aquí. Simplemente retornamos para que
+                # el código continúe en la sección de carga de ríos donde existe limit_final
+                print(f"      ℹ️ Se usará fallback en la siguiente etapa de carga de ríos")
+                # Crear un archivo dummy para que el flujo continúe
+                dummy_shp = os.path.join(temp_folder, "streams_dummy.shp")
+                return None  # Retornar None para indicar que no hay streams reales
         
         print(f"      ✅ Procesamiento hidrológico completado")
         
@@ -554,23 +534,49 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
     print(f"[3/6] 🌀 Cargando red de ríos...")
     
     try:
+        # Preparar limit_final (reproyectar a CRS del DEM si es necesario)
+        if limit.crs != limit.crs:  # Si tienen CRS diferentes
+            limit_final = limit.to_crs(limit.crs)
+        else:
+            limit_final = limit.copy()
+        
         rivers = gpd.read_file(streams_vector)
         
         if rivers.crs is None:
             with rasterio.open(dem_clipped) as dem_src:
                 rivers = rivers.set_crs(dem_src.crs)
         
-        if rivers.crs != limit.crs:
-            limit_final = limit.to_crs(rivers.crs)
-        else:
-            limit_final = limit.copy()
+        if rivers.crs != limit_final.crs:
+            limit_final = limit_final.to_crs(rivers.crs)
         
         rivers_clip = gpd.clip(rivers, limit_final)
         print(f"      ✅ {len(rivers_clip)} segmentos de ríos")
         
     except Exception as e:
         print(f"❌ Error cargando ríos: {e}")
-        return None
+        print(f"   Activando fallback de ríos...")
+        
+        # Fallback: usar geometría del distrito directamente
+        try:
+            limit_final = limit.copy()
+            geom_union = limit_final.geometry.unary_union
+            area_km2 = geom_union.area / 1_000_000 if hasattr(geom_union, 'area') else 0
+            
+            rivers_clip = gpd.GeoDataFrame(
+                {
+                    'clase': ['no_rio_fallback'],
+                    'dist_min_m': [999999],
+                    'dist_max_m': [999999],
+                    'area_km2': [round(area_km2, 4)],
+                    'PESO_RIO': [1]
+                },
+                geometry=[geom_union],
+                crs=limit_final.crs
+            )
+            print(f"      ✅ Fallback de ríos creado: {len(rivers_clip)} geometría(s) con PESO_RIO=1")
+        except Exception as fb_e:
+            print(f"      ⚠️ Falló la creación del fallback de ríos: {fb_e}")
+            return None
     
     # [4/6] Generar buffers con pesos
     print(f"[4/6] 🎯 Generando buffers con pesos...")

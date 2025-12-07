@@ -81,13 +81,22 @@ def get_rutas_peligro(departamento_sel, provincia_sel):
     if dpto == 'PIURA':
         base = os.path.join(ruta_base, 'DATA', 'PELIGRO', 'INUNDACION_PLUVIAL', 'PIURA_DEPARTAMENTO')
 
-        # Buscar dentro del directorio del departamento (recursivo) — así encontraremos archivos
-        # aunque las carpetas de provincia usen UPPER/Title case (PIURA_PROVINCIA / PIURA_Provincia)
-        rutas['RUTA_BASE_GEOMORFOLOGIA'] = base
-        rutas['RUTA_BASE_GEOLOGIA'] = base
+        # Rutas a datos generales del departamento (compartidos entre provincias)
         rutas['RUTA_BASE_PPMAX'] = os.path.join(base, 'DATOS_GENERALES', 'PP_MAX')
         rutas['RUTA_BASE_PENDIENTE'] = os.path.join(base, 'DATOS_GENERALES', 'PENDIENTE')
         rutas['RUTA_DEM'] = ruta_dem_dpto  # Usar DEM específico de PIURA
+
+        # Rutas específicas por provincia (si se conoce la provincia, apuntar a la subcarpeta correspondiente)
+        prov_norm = (prov or '').strip().upper().replace(' ', '_')
+        if prov_norm:
+            prov_dir = f"{prov_norm}_PROVINCIA"
+            # construir rutas esperadas para geomorfología y geología dentro de la provincia
+            rutas['RUTA_BASE_GEOMORFOLOGIA'] = os.path.join(base, prov_dir, 'GEOMORFOLOGIA')
+            rutas['RUTA_BASE_GEOLOGIA'] = os.path.join(base, prov_dir, 'GEOLOGIA')
+        else:
+            # Si no hay provincia, dejar la búsqueda sobre todo el departamento (recursiva)
+            rutas['RUTA_BASE_GEOMORFOLOGIA'] = base
+            rutas['RUTA_BASE_GEOLOGIA'] = base
 
     return rutas
 
@@ -138,6 +147,14 @@ def downsample_dem(dem_in, dem_out, factor=4):
 INTENSIDAD_RIOS = "muy_baja"  # Opciones: "muy_alta", "alta", "media", "baja", "muy_baja"
 UMBRALES_RIOS = {"muy_alta": 50, "alta": 200, "media": 500, "baja": 1000, "muy_baja": 1500}
 
+# Umbrales específicos por archivo DEM (basename). Si el DEM recortado corresponde
+# a alguna de estas claves, se usarán estos umbrales en lugar de los derivados
+# por intensidad/defaults. Valores ordenados de mayor a menor (se capearán).
+DEM_SPECIFIC_THRESHOLDS = {
+    # Usar valores compatibles con la intensidad 'baja' (UMBRALES_RIOS['baja'] == 1000)
+    'Piura_DEM_30m_MAX_RESOLUCION.tif': [1000, 500, 200, 100, 50, 20, 10, 5, 1]
+}
+
 # CONFIGURACIÓN DE BUFFERS CON PESOS
 BUFFERS_CONFIG = [
     {"name": "0-50m", "inner": 0, "outer": 50, "peso": 5},
@@ -148,7 +165,8 @@ BUFFERS_CONFIG = [
 ]
 
 # PALETA DE COLORES PARA NIVELES DE PELIGRO
-COLORES_PELIGRO = ['#00FF00', '#FFFF00', '#FFA500', '#FF0000']
+# Verde más oscuro y amarillo menos saturado para menor contraste visual
+COLORES_PELIGRO = ['#2E8B57', '#FFD700', '#FFA500', '#FF0000']
 ETIQUETAS_PELIGRO = ['Baja', 'Media', 'Alta', 'Muy Alta']
 RANGOS_PELIGRO = [1.00, 2.00, 3.00, 4.00, 5.00]
 
@@ -197,7 +215,7 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
     
     # Lista para almacenar posiciones de etiquetas y evitar solapamiento
     posiciones_etiquetas = []
-    distancia_minima_entre_etiquetas = escala * 0.04  # Separación mínima entre etiquetas
+    distancia_minima_entre_etiquetas = escala * 0.06  # Separación mínima entre etiquetas (aumentada)
     
     for idx, (i, row) in enumerate(gdf_centros_poblados.iterrows()):
         try:
@@ -213,6 +231,26 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
             
             if not nombre:
                 nombre = f'Centro {idx}'
+                if not nombre:
+                    nombre = f'Centro {idx}'
+
+                # Formatear nombre: primera letra mayúscula por palabra (Title Case)
+                try:
+                    nombre = str(nombre).strip().title()
+                except Exception:
+                    nombre = str(nombre).strip()
+
+            # Formatear nombre: primera letra mayúscula, resto minúscula
+            try:
+                tmp = str(nombre).strip()
+                tmp_low = tmp.lower()
+                if len(tmp_low) > 0:
+                    nombre = tmp_low[0].upper() + tmp_low[1:]
+                else:
+                    nombre = tmp_low
+            except Exception:
+                # fallback sencillo
+                nombre = str(nombre)
             
             # Coordenadas del punto original
             x_orig, y_orig = punto.x, punto.y
@@ -258,12 +296,11 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
                 else:
                     # Reubicar: alejar más la etiqueta progresivamente
                     intentos_reubicacion += 1
-                    offset_adicional = escala * 0.02 * intentos_reubicacion
+                    offset_adicional = escala * 0.03 * intentos_reubicacion
                     x_label = punto_limite.x + dx_norm * (offset_perpendicular + offset_adicional)
                     y_label = punto_limite.y + dy_norm * (offset_perpendicular + offset_adicional)
             
-            # Guardar la posición final de esta etiqueta
-            posiciones_etiquetas.append((x_label, y_label))
+            # Nota: no guardar posición provisional aquí (evita duplicados)
             
             # Intentar ubicar la etiqueta DENTRO del polígono si el punto está bien ubicado
             etiqueta_colocada_dentro = False
@@ -277,33 +314,67 @@ def agregar_etiquetas_ordenadas_circularmente(gdf_distritos, gdf_centros_poblado
                     collision = any(np.sqrt((x_label_in - px)**2 + (y_label_in - py)**2) < distancia_minima_entre_etiquetas for px, py in posiciones_etiquetas)
                     if not collision:
                         posiciones_etiquetas.append((x_label_in, y_label_in))
-                        ax.plot(x_orig, y_orig, 'o', color='#006400', markersize=3.5, zorder=6)
-                        ax.text(
-                            x_label_in, y_label_in, nombre,
-                            fontsize=6.0, fontweight='bold', ha='left', va='center',
-                            bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='black', alpha=0.85, linewidth=0.5),
-                            zorder=8
+                        # Punto: color negro y mucho más pequeño
+                        # Dibujar punto (zorder bajo para que la etiqueta quede encima)
+                        ax.plot(x_orig, y_orig, 'o', color='#4b4b4b', markersize=0.7, zorder=14)
+                        # Etiqueta: en NEGRITA, más pequeña, ubicada MUY CERCA del punto y con halo delgado
+                        shift_close = escala * 0.001  # desplazamiento pequeño
+                        # Posición inicial muy cerca encima/derecha del punto
+                        lx = x_orig + dx_norm * shift_close + escala * 0.0005
+                        ly = y_orig + shift_close * 0.9
+                        # Evitar solapamiento con etiquetas previas: mover solo ligeramente (máx 3 intentos)
+                        intent = 0
+                        step = escala * 0.0008
+                        while any(np.sqrt((lx - px)**2 + (ly - py)**2) < distancia_minima_entre_etiquetas for px, py in posiciones_etiquetas) and intent < 3:
+                            ly += step
+                            intent += 1
+                        txt = ax.text(
+                            lx, ly,
+                            nombre,
+                            fontsize=3.0, fontweight='bold', ha='center', va='bottom', color='black',
+                            zorder=16
                         )
+                        try:
+                            txt.set_path_effects([path_effects.withStroke(linewidth=0.5, foreground='white', alpha=0.9)])
+                        except Exception:
+                            pass
+                        posiciones_etiquetas.append((lx, ly))
                         etiqueta_colocada_dentro = True
             except Exception:
                 etiqueta_colocada_dentro = False
 
             if not etiqueta_colocada_dentro:
-                # Dibujar línea fina y más corta desde el punto hasta la etiqueta externa
-                # Reducir grosor y longitud para evitar exceso de cruces
-                short_factor = 0.7
-                x_label_short = punto_limite.x + dx_norm * (offset_perpendicular * short_factor)
-                y_label_short = punto_limite.y + dy_norm * (offset_perpendicular * short_factor)
+                # Colocar etiqueta MUY CERCA del punto (sin cuadro blanco) y punto negro pequeño
+                shift_close = escala * 0.001
+                x_label_near = x_orig + shift_close * 0.8
+                y_label_near = y_orig + shift_close * 0.9
 
-                ax.plot([x_orig, x_label_short], [y_orig, y_label_short], color='white', linewidth=0.5, alpha=0.9, zorder=5)
-                ax.plot(x_orig, y_orig, 'o', color='#006400', markersize=3.5, zorder=6)
-                posiciones_etiquetas.append((x_label_short, y_label_short))
-                ax.text(
-                    x_label_short, y_label_short, nombre,
-                    fontsize=6.0, fontweight='bold', ha='center', va='center',
-                    bbox=dict(boxstyle='round,pad=0.25', facecolor='white', edgecolor='black', alpha=0.85, linewidth=0.5),
-                    zorder=8
+                # Líneas conectoras opcionales: usan color gris muy tenue en lugar de blanco
+                # para evitar fondo blanco en etiquetas y mantener legibilidad
+                # Si se desea, comentar la línea siguiente para eliminar el conector por completo
+                # ax.plot([x_orig, x_label_near], [y_orig, y_label_near], color='#666666', linewidth=0.3, alpha=0.6, zorder=5)
+
+                # Dibujar punto (zorder bajo para que la etiqueta quede encima)
+                ax.plot(x_orig, y_orig, 'o', color='#4b4b4b', markersize=0.7, zorder=14)
+                # Colocar etiqueta muy cerca del punto y por encima ligeramente
+                lx = x_label_near
+                ly = y_label_near + escala * 0.0008
+                # Intentar mover hacia arriba si colisiona (máx 3 intentos)
+                intent = 0
+                step = escala * 0.0008
+                while any(np.sqrt((lx - px)**2 + (ly - py)**2) < distancia_minima_entre_etiquetas for px, py in posiciones_etiquetas) and intent < 3:
+                    ly += step
+                    intent += 1
+                txt2 = ax.text(
+                    lx, ly, nombre,
+                    fontsize=3.0, fontweight='bold', ha='center', va='bottom', color='black',
+                    zorder=16
                 )
+                try:
+                    txt2.set_path_effects([path_effects.withStroke(linewidth=0.5, foreground='white', alpha=0.9)])
+                except Exception:
+                    pass
+                posiciones_etiquetas.append((lx, ly))
         except Exception as e:
             continue
 
@@ -443,19 +514,132 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
             if not os.path.exists(flow_acc):
                 import time
                 start_time = time.time()
-                wbt.d8_flow_accumulation(filled_dem, flow_acc, out_type="cells")
+                # Intentar generar acumulación en UNIDADES de área si Whitebox lo soporta,
+                # sino caer a 'cells' (comportamiento por defecto).
+                try:
+                    wbt.d8_flow_accumulation(filled_dem, flow_acc, out_type="specific contributing area")
+                    print(f"      ✅ Acumulación de flujo calculada (área específica)")
+                except Exception:
+                    # Fallback a celdas si la opción anterior no está disponible
+                    wbt.d8_flow_accumulation(filled_dem, flow_acc, out_type="cells")
+                    print(f"      ✅ Acumulación de flujo calculada (cells)")
                 elapsed = time.time() - start_time
-                print(f"      ✅ Acumulación de flujo calculada ({elapsed:.1f}s)")
+                print(f"         Tiempo: {elapsed:.1f}s")
             else:
                 print(f"      ⚡ Usando flow_acc existente")
             
+            # Ajustar umbral por tamaño de píxel (mantener equivalencia respecto a un DEM base de 30m)
             threshold_default = int(UMBRALES_RIOS.get(INTENSIDAD_RIOS, 1500))
-            print(f"      [2.4/4] Extrayendo red de ríos (umbral inicial: {threshold_default} celdas)...")
+            used_area_acc = False
+            try:
+                with rasterio.open(flow_acc) as acc_src:
+                    acc_meta = acc_src.meta
+                    acc_arr = acc_src.read(1)
+                    max_acc = int(np.nanmax(acc_arr)) if acc_arr is not None else None
+            except Exception:
+                acc_arr = None
+                max_acc = None
 
-            # Intentar varios umbrales si la vectorización resulta vacía
+            # Leer resolución del DEM para normalizar umbral (asumiendo DEM de referencia 30m)
+            try:
+                with rasterio.open(filled_dem) as dem_src:
+                    xres, yres = dem_src.res
+                    cell_area = abs(xres * yres)
+            except Exception:
+                xres = yres = 30
+                cell_area = 900
+
+            # Determinar si la acumulación fue generada en unidades de área (m²) vs celdas
+            try:
+                # calcular área del distrito en m² usando limit_proj (proyectado al CRS del DEM)
+                district_area_m2 = float(limit_proj.geometry.unary_union.area)
+            except Exception:
+                district_area_m2 = None
+
+            # Si max_acc supera un umbral relativo (ej. 10 veces el número estimado de celdas sobre el distrito), asumimos unidades de área
+            used_area_acc = False
+            if max_acc is not None and district_area_m2 is not None:
+                # estimar número de celdas del distrito
+                est_cells = max(1, int(district_area_m2 / cell_area))
+                if max_acc > est_cells * 10:
+                    used_area_acc = True
+
+            # Construir umbrales robustos usando percentiles de la acumulación cuando sea posible
+            MAX_CAP = 1_000_000  # cap máximo razonable para umbrales (evita valores absurdos)
+            candidate_thresholds = []
+
+            if acc_arr is not None and acc_arr.size > 0:
+                acc_nonzero = acc_arr[acc_arr > 0]
+                if acc_nonzero.size == 0:
+                    acc_nonzero = acc_arr.flatten()
+
+                # Si la acumulación parece estar en área (used_area_acc), usar percentiles y fracciones del área del distrito
+                if used_area_acc:
+                    percentiles = [99.9, 99, 95, 90, 80, 70, 50, 25]
+                    for p in percentiles:
+                        try:
+                            val = int(np.nanpercentile(acc_nonzero, p))
+                            if val > 0:
+                                candidate_thresholds.append(val)
+                        except Exception:
+                            continue
+
+                    # Añadir fracciones del área del distrito como candidatos (capear)
+                    if district_area_m2 and district_area_m2 > 0:
+                        for frac in (0.01, 0.005, 0.001, 0.0005):
+                            candidate_thresholds.append(min(int(district_area_m2 * frac), MAX_CAP))
+
+                    # Incluir algunos valores fijos pero capados
+                    candidate_thresholds.extend([min(x, MAX_CAP) for x in (500000, 100000, 50000, 10000, 1000)])
+
+                else:
+                    # Acumulación en celdas: usar percentiles relativos y algunos valores pequeños
+                    percentiles = [99, 95, 90, 80, 70, 50, 25, 10]
+                    for p in percentiles:
+                        try:
+                            val = int(np.nanpercentile(acc_nonzero, p))
+                            if val > 0:
+                                candidate_thresholds.append(val)
+                        except Exception:
+                            continue
+
+                    # Añadir algunos umbrales por defecto ajustados por tamaño de píxel
+                    base_cell_area = 30 * 30
+                    scale_factor = cell_area / base_cell_area if base_cell_area > 0 else 1.0
+                    adjusted_default = max(1, int(threshold_default / scale_factor))
+                    candidate_thresholds.extend([adjusted_default, max(int(adjusted_default / 2), 1), 50, 20, 10, 5, 1])
+
+                # Filtrar, capear y ordenar
+                candidate_thresholds = [int(min(MAX_CAP, max(1, int(t)))) for t in sorted(set(candidate_thresholds), reverse=True)]
+
+            else:
+                # Si no tenemos matriz de acumulación, caer a heurística anterior pero con caps
+                base_cell_area = 30 * 30
+                scale_factor = cell_area / base_cell_area if base_cell_area > 0 else 1.0
+                adjusted_default = max(1, int(threshold_default / scale_factor))
+                candidate_thresholds = [adjusted_default, max(int(adjusted_default / 2), 1), 50, 20, 10, 5, 1]
+                candidate_thresholds = [int(min(MAX_CAP, t)) for t in sorted(set(candidate_thresholds), reverse=True)]
+
+            # Si el DEM recortado corresponde a un DEM para el que definimos umbrales
+            # específicos (p.ej. Piura), sobrescribimos candidate_thresholds
+            dem_basename = None
+            try:
+                dem_src_path = ruta_dem_candidate if 'ruta_dem_candidate' in locals() else None
+                if dem_src_path:
+                    dem_basename = os.path.basename(dem_src_path)
+            except Exception:
+                dem_basename = None
+
+            if dem_basename in globals().get('DEM_SPECIFIC_THRESHOLDS', {}):
+                specific = DEM_SPECIFIC_THRESHOLDS[dem_basename]
+                candidate_thresholds = [int(min(MAX_CAP, max(1, int(t)))) for t in sorted(set(specific), reverse=True)]
+                print(f"      ℹ️ Usando umbrales específicos para DEM {dem_basename}: {candidate_thresholds}")
+
+            print(f"      [2.4/4] Extrayendo red de ríos (intensidad: {INTENSIDAD_RIOS}, modo_acc={'area' if used_area_acc else 'cells'}, cell_area={cell_area:.1f} m², district_area={district_area_m2})")
+            print(f"      → Umbrales probados (ordenados y capados): {candidate_thresholds}")
+
             tried_thresholds = []
             success_vectorized = False
-            candidate_thresholds = [threshold_default, max(int(threshold_default/2), 1), max(int(threshold_default/5), 1), 50, 10]
 
             for th in candidate_thresholds:
                 if th in tried_thresholds:
@@ -463,23 +647,27 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
                 tried_thresholds.append(th)
                 try:
                     print(f"         → Probando umbral = {th} ...")
-                    # extraer streams raster
-                    if not os.path.exists(streams_raster):
-                        wbt.extract_streams(flow_acc, streams_raster, th)
-                    else:
-                        # si ya existe, regenerarlo para este intento
-                        try:
+                    # extraer streams raster (si ya existe lo regeneramos)
+                    try:
+                        if os.path.exists(streams_raster):
                             os.remove(streams_raster)
-                        except Exception:
-                            pass
-                        wbt.extract_streams(flow_acc, streams_raster, th)
+                    except Exception:
+                        pass
+                    wbt.extract_streams(flow_acc, streams_raster, th)
 
                     # vectorizar
-                    if os.path.exists(streams_vector):
-                        try:
-                            os.remove(streams_vector)
-                        except Exception:
-                            pass
+                    try:
+                        if os.path.exists(streams_vector):
+                            # remover antiguos componentes del shapefile
+                            for ext in ('.shp', '.shx', '.dbf', '.prj', '.cpg'):
+                                p = streams_vector.replace('.shp', ext)
+                                try:
+                                    if os.path.exists(p):
+                                        os.remove(p)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
 
                     wbt.raster_streams_to_vector(streams_raster, flow_dir, streams_vector)
 
@@ -489,9 +677,31 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
                         if os.path.exists(streams_vector):
                             rivers_try = _gpd.read_file(streams_vector)
                             if len(rivers_try) > 0:
-                                print(f"      ✅ Red de ríos vectorizada (umbral {th}) — {len(rivers_try)} segmentos")
-                                success_vectorized = True
-                                break
+                                # Calcular longitud en metros: reproyectar temporalmente a EPSG:3857
+                                try:
+                                    if rivers_try.crs is None:
+                                        # intentar asignar el CRS del DEM recortado si está disponible
+                                        try:
+                                            with rasterio.open(dem_clipped) as _dem_tmp:
+                                                dem_crs = _dem_tmp.crs
+                                        except Exception:
+                                            dem_crs = None
+                                        if dem_crs is not None:
+                                            rivers_try.set_crs(dem_crs, inplace=True)
+
+                                    rivers_m = rivers_try.to_crs(epsg=3857)
+                                    total_length_m = rivers_m.geometry.length.sum()
+                                except Exception:
+                                    # Fallback: usar geometría original (u.corta), asumiendo unidades desconocidas
+                                    total_length_m = float(rivers_try.geometry.length.sum())
+
+                                # Aceptar si existen segmentos y la longitud total en metros es razonable (>10 m)
+                                if total_length_m > 10:
+                                    print(f"      ✅ Red de ríos vectorizada (umbral {th}) — {len(rivers_try)} segmentos, longitud total {total_length_m:.1f} m")
+                                    success_vectorized = True
+                                    break
+                                else:
+                                    print(f"      ⚠️ Vector resultante muy corto (len={total_length_m:.1f} m) para umbral {th}")
                             else:
                                 print(f"      ⚠️ Vector resultante vacío para umbral {th}")
                         else:
@@ -510,12 +720,8 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
                 except Exception:
                     pass
 
-                # El fallback se maneja en [3/6], no aquí. Simplemente retornamos para que
-                # el código continúe en la sección de carga de ríos donde existe limit_final
                 print(f"      ℹ️ Se usará fallback en la siguiente etapa de carga de ríos")
-                # Crear un archivo dummy para que el flujo continúe
-                dummy_shp = os.path.join(temp_folder, "streams_dummy.shp")
-                return None  # Retornar None para indicar que no hay streams reales
+                return None
         
         print(f"      ✅ Procesamiento hidrológico completado")
         
@@ -541,14 +747,68 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
             limit_final = limit.copy()
         
         rivers = gpd.read_file(streams_vector)
-        
-        if rivers.crs is None:
-            with rasterio.open(dem_clipped) as dem_src:
-                rivers = rivers.set_crs(dem_src.crs)
-        
-        if rivers.crs != limit_final.crs:
-            limit_final = limit_final.to_crs(rivers.crs)
-        
+
+        # Si el shapefile no trae CRS (a menudo falta el .prj), intentar asignarlo
+        # a partir del DEM recortado; si no está, usar el CRS del raster streams.tif.
+        try:
+            rivers_crs = getattr(rivers, 'crs', None)
+        except Exception:
+            rivers_crs = None
+
+        if rivers_crs is None or rivers_crs == {}:
+            dem_crs = None
+            # intentar DEM recortado
+            try:
+                if 'dem_clipped' in locals() and dem_clipped is not None and os.path.exists(dem_clipped):
+                    with rasterio.open(dem_clipped) as dem_src:
+                        dem_crs = dem_src.crs
+            except Exception:
+                dem_crs = None
+
+            # fallback: intentar el raster de streams si existe
+            if dem_crs is None:
+                try:
+                    if 'streams_raster' in locals() and streams_raster is not None and os.path.exists(streams_raster):
+                        with rasterio.open(streams_raster) as sr:
+                            dem_crs = sr.crs
+                except Exception:
+                    dem_crs = None
+
+            if dem_crs is not None:
+                try:
+                    rivers.set_crs(dem_crs, inplace=True)
+                    print(f"      ℹ️ Asignado CRS a ríos desde raster: {dem_crs}")
+                    # intentar escribir .prj junto al shapefile para compatibilidad externa
+                    try:
+                        prj_path = streams_vector.replace('.shp', '.prj')
+                        # dem_crs may have to_wkt()
+                        wkt_text = None
+                        try:
+                            wkt_text = dem_crs.to_wkt()
+                        except Exception:
+                            try:
+                                wkt_text = dem_crs.wkt
+                            except Exception:
+                                wkt_text = None
+                        if wkt_text:
+                            with open(prj_path, 'w') as fprj:
+                                fprj.write(wkt_text)
+                    except Exception:
+                        pass
+                except Exception as e:
+                    print(f"      ⚠️ No se pudo asignar CRS al shapefile de ríos: {e}")
+            else:
+                print("      ⚠️ No se encontró CRS en DEM ni en streams.tif; ríos quedan sin CRS")
+
+        # Asegurar que limit_final esté en el mismo CRS que rivers antes de recortar
+        try:
+            if rivers.crs is not None and limit.crs != rivers.crs:
+                limit_final = limit.to_crs(rivers.crs)
+            else:
+                limit_final = limit.copy()
+        except Exception:
+            limit_final = limit.copy()
+
         rivers_clip = gpd.clip(rivers, limit_final)
         print(f"      ✅ {len(rivers_clip)} segmentos de ríos")
         
@@ -582,27 +842,48 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
     print(f"[4/6] 🎯 Generando buffers con pesos...")
     
     try:
-        rivers_union = unary_union(rivers_clip.geometry)
+        # Reproyectar a CRS métrico (EPSG:3857) antes de hacer buffers en metros
+        TARGET_EPSG = 3857
+        try:
+            if rivers_clip.crs is None:
+                print("      ⚠️ rivers_clip sin CRS; buffers se crearán sin reproyección")
+                rivers_clip_proj = rivers_clip.copy()
+            else:
+                rivers_clip_proj = rivers_clip.to_crs(epsg=TARGET_EPSG)
+
+            try:
+                limit_final_proj = limit_final.to_crs(epsg=TARGET_EPSG)
+            except Exception:
+                limit_final_proj = limit_final.copy()
+
+            print(f"      ℹ️ Reproyectado para buffers a EPSG:{TARGET_EPSG}")
+        except Exception as e:
+            print(f"      ⚠️ Error al reproyectar para buffers: {e}")
+            rivers_clip_proj = rivers_clip.copy()
+            limit_final_proj = limit_final.copy()
+
+        rivers_union = unary_union(rivers_clip_proj.geometry)
         buffer_list = []
-        
+
         for config in BUFFERS_CONFIG:
             name = config["name"]
             inner = config["inner"]
             outer = config["outer"]
             peso = config["peso"]
-            
+
             if outer is None:
-                outer_buffer = limit_final.geometry.union_all()
+                # outer None -> area fuera del inner hasta el límite
+                outer_buffer = limit_final_proj.geometry.unary_union
                 inner_buffer = rivers_union.buffer(inner)
                 buffer_ring = outer_buffer.difference(inner_buffer)
             else:
                 outer_buffer = rivers_union.buffer(outer)
                 inner_buffer = rivers_union.buffer(inner)
                 buffer_ring = outer_buffer.difference(inner_buffer)
-                buffer_ring = buffer_ring.intersection(limit_final.geometry.union_all())
-            
+                buffer_ring = buffer_ring.intersection(limit_final_proj.geometry.unary_union)
+
             area_km2 = buffer_ring.area / 1_000_000
-            
+
             gdf = gpd.GeoDataFrame(
                 {
                     'clase': [name],
@@ -612,13 +893,13 @@ def generar_shapefile_rios_con_pesos(distrito_shapefile, output_folder, temp_fol
                     'PESO_RIO': [peso]
                 },
                 geometry=[buffer_ring],
-                crs=rivers_clip.crs
+                crs=f"EPSG:{TARGET_EPSG}"
             )
-            
+
             buffer_list.append(gdf)
-        
+
         buffers_gdf = gpd.GeoDataFrame(pd.concat(buffer_list, ignore_index=True))
-        print(f"      ✅ {len(buffers_gdf)} clases de buffers generadas")
+        print(f"      ✅ {len(buffers_gdf)} clases de buffers generadas (en EPSG:{TARGET_EPSG})")
         
     except Exception as e:
         print(f"❌ Error generando buffers: {e}")
@@ -929,16 +1210,17 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
 def buscar_archivo_peligro(ruta_base, patron_busqueda, tipo_capa, provincia_sel=None):
     """Busca archivos de peligro de forma inteligente, priorizando por provincia si se especifica"""
     print(f"   🔍 Buscando {tipo_capa} en: {ruta_base}")
-    
+
     archivos_encontrados = []
     archivos_provincia = []
-    
+
+    # Recorremos la ruta buscando coincidencias exactas del patrón
     for root, dirs, files in os.walk(ruta_base):
         for file in files:
-            if file.lower().endswith('.shp') and patron_busqueda.lower() in file.lower():
+            if file.lower().endswith('.shp') and patron_busqueda and patron_busqueda.lower() in file.lower():
                 ruta_completa = os.path.join(root, file)
                 archivos_encontrados.append(ruta_completa)
-                
+
                 # Si se especifica provincia, priorizar archivos que la contengan en el nombre o ruta
                 if provincia_sel:
                     provincia_norm = provincia_sel.lower().replace(' ', '_')
@@ -949,18 +1231,35 @@ def buscar_archivo_peligro(ruta_base, patron_busqueda, tipo_capa, provincia_sel=
                         print(f"      ℹ️ Encontrado (otros): {ruta_completa}")
                 else:
                     print(f"      ✅ Encontrado: {ruta_completa}")
-    
+
     # Priorizar archivos de la provincia si existen
     if archivos_provincia:
         return archivos_provincia[0]
-    
+
+    # Si no hay coincidencias exactas con el patrón, comprobar si existen shapefiles en la ruta
     if not archivos_encontrados:
-        print(f"      ❌ No se encontraron archivos para {tipo_capa}")
-        return None
-    
+        any_shp = False
+        for root, dirs, files in os.walk(ruta_base):
+            for file in files:
+                if file.lower().endswith('.shp'):
+                    any_shp = True
+                    break
+            if any_shp:
+                break
+
+        if any_shp:
+            # No se encontraron archivos que coincidan con el patrón específico,
+            # pero sí existen shapefiles en la carpeta: lo informamos con menor severidad
+            print(f"      ℹ️ No se encontraron archivos que coincidan con '{patron_busqueda}' para {tipo_capa} en la ruta indicada; se intentarán fallback(s) posteriormente")
+            return None
+        else:
+            # No hay shapefiles en la ruta base — mensaje más claro
+            print(f"      ❌ No se encontraron archivos .shp en: {ruta_base} (para {tipo_capa})")
+            return None
+
     if len(archivos_encontrados) > 1:
         print(f"      ⚠️ Se encontraron {len(archivos_encontrados)} archivos, usando el primero")
-    
+
     return archivos_encontrados[0]
 
 def asignar_color_peligro(valor):
@@ -1209,6 +1508,15 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             else:
                 # Usar DEM original
                 globals()['RUTA_DEM_USUARIO'] = ruta_dem_candidate
+
+        # 🔧 Ajuste específico: si el DEM corresponde al DEM costero de Piura,
+        # usar la intensidad de ríos 'baja' (según solicitud) para este DEM.
+        try:
+            if ruta_dem_candidate and os.path.basename(ruta_dem_candidate) == 'Piura_DEM_30m_MAX_RESOLUCION.tif':
+                print("   ℹ️ DEM detectado: Piura_DEM_30m_MAX_RESOLUCION.tif — ajustando INTENSIDAD_RIOS='baja' para generación de ríos")
+                globals()['INTENSIDAD_RIOS'] = 'baja'
+        except Exception:
+            pass
         
         if dry_run:
             print("   🧭 dry_run activado — NO se generará shapefile ahora")
@@ -1252,10 +1560,14 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         
         gdf_pendiente = gpd.read_file(ruta_pendiente).to_crs(epsg=3857)
         print(f"      ✅ Pendiente cargada: {len(gdf_pendiente)} registros")
+        print(f"         📋 Columnas PENDIENTE: {list(gdf_pendiente.columns)}")
         
         # 2️⃣ GEOMORFOLOGÍA
         print(f"\n   🔍 Buscando capa de GEOMORFOLOGÍA...")
-        ruta_geomorfo = buscar_archivo_peligro(ruta_base_geomorfo, departamento_sel.lower(), "GEOMORFOLOGÍA")
+        # Priorizar búsqueda por provincia (especialmente útil en PIURA donde hay subcarpetas por provincia)
+        ruta_geomorfo = buscar_archivo_peligro(ruta_base_geomorfo, provincia_sel, "GEOMORFOLOGÍA")
+        if not ruta_geomorfo:
+            ruta_geomorfo = buscar_archivo_peligro(ruta_base_geomorfo, departamento_sel.lower(), "GEOMORFOLOGÍA")
         if not ruta_geomorfo:
             ruta_geomorfo = buscar_archivo_peligro(ruta_base_geomorfo, "peso", "GEOMORFOLOGÍA")
         
@@ -1264,6 +1576,7 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         
         gdf_geomorfo = gpd.read_file(ruta_geomorfo).to_crs(epsg=3857)
         print(f"      ✅ Geomorfología cargada: {len(gdf_geomorfo)} registros")
+        print(f"         📋 Columnas GEOMORFOLOGÍA: {list(gdf_geomorfo.columns)}")
         
         # 3️⃣ PP MÁXIMA
         print(f"\n   🔍 Buscando capa de PP MÁXIMA...")
@@ -1280,6 +1593,28 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         
         gdf_ppmax = gpd.read_file(ruta_ppmax).to_crs(epsg=3857)
         print(f"      ✅ PP Máxima cargada: {len(gdf_ppmax)} registros")
+        print(f"         📋 Columnas PP MÁXIMA: {list(gdf_ppmax.columns)}")
+        # 🛠️ Fallback automático: crear/normalizar columna 'Nivel' desde nombres comunes
+        if 'Nivel' not in gdf_ppmax.columns:
+            # buscar columnas que puedan contener la clasificación (TR50, CLAS, CLASIF, CLASE, etc.)
+            pp_candidates = [c for c in gdf_ppmax.columns if any(k in c.upper() for k in ['TR', 'TR50', 'CLAS', 'CLASIF', 'CLASE', 'CAT', 'CATEG'])]
+            if pp_candidates:
+                chosen = pp_candidates[0]
+                print(f"      ℹ️ Columna candidata para 'Nivel' encontrada: '{chosen}' — intentando crear 'Nivel' a partir de ella")
+                try:
+                    # primero intentar convertir a numérico
+                    vals_num = pd.to_numeric(gdf_ppmax[chosen], errors='coerce')
+                    if not vals_num.isna().all():
+                        gdf_ppmax['Nivel'] = vals_num.fillna(0).astype(float)
+                        print(f"      ✅ 'Nivel' creado a partir de '{chosen}' (numérico)")
+                    else:
+                        # mapear categorías a 1..n
+                        unique_vals = list(gdf_ppmax[chosen].dropna().unique())
+                        mapping = {v: i+1 for i, v in enumerate(sorted(unique_vals, key=lambda x: str(x)))}
+                        gdf_ppmax['Nivel'] = gdf_ppmax[chosen].map(mapping).astype(float)
+                        print(f"      ✅ 'Nivel' creado a partir de '{chosen}' (categórico) con mapeo: {mapping}")
+                except Exception as e:
+                    print(f"      ⚠️ No se pudo crear 'Nivel' desde '{chosen}': {e}")
         
         # 4️⃣ 🆕 DISTANCIA A RÍOS (YA GENERADO EN PASO 1)
         print(f"\n   🔍 Cargando capa de DISTANCIA A RÍOS...")
@@ -1323,45 +1658,61 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             gdf_geologia = gdf_geologia.to_crs(epsg=3857)
         
         print(f"      ✅ Geología cargada: {len(gdf_geologia)} registros")
-        print(f"      📋 Columnas: {list(gdf_geologia.columns)}")
+        print(f"      📋 Columnas GEOLOGÍA: {list(gdf_geologia.columns)}")
         
         # VERIFICAR COLUMNAS / NORMALIZAR NOMBRES DE PESO
         # Algunos shapefiles usan nombres específicos ('PESO', 'Nivel', etc.) — buscar y renombrar si es posible
         def ensure_weight_column(gdf, expected_name, friendly_layer_name, priority_names=None):
+            """Normaliza la columna de peso en un GeoDataFrame.
+
+            Retorna el nombre de la columna usada para el peso (expected_name o la columna origen),
+            o None si no se encontró ninguna columna adecuada.
+            """
             if expected_name in gdf.columns:
-                return True
+                return expected_name
 
             if priority_names is None:
                 priority_names = []
 
-            # Buscar primero en lista de prioridades
+            # Buscar primero en lista de prioridades (nombres exactos)
             for prio_name in priority_names:
                 if prio_name in gdf.columns:
-                    print(f"      ⚠️ No existe '{expected_name}' en {friendly_layer_name} — usando columna encontrada '{prio_name}' como '{expected_name}'")
+                    print(f"      ℹ️ Usando columna '{prio_name}' de {friendly_layer_name} como '{expected_name}'")
                     gdf[expected_name] = gdf[prio_name]
-                    return True
+                    return expected_name
 
             # Fallback: buscar columnas que contengan 'PESO' (insensible a mayúsculas)
             candidatos = [c for c in gdf.columns if 'PESO' in c.upper()]
             if candidatos:
                 elegido = candidatos[0]
-                print(f"      ⚠️ No existe '{expected_name}' en {friendly_layer_name} — usando columna encontrada '{elegido}' como '{expected_name}'")
+                print(f"      ℹ️ Usando columna '{elegido}' de {friendly_layer_name} como '{expected_name}'")
                 gdf[expected_name] = gdf[elegido]
-                return True
+                return expected_name
 
-            # no se encontró ninguna columna con 'PESO'
-            return False
+            # Si no aparece 'PESO', intentar nombres numéricos/ordinales comunes (Nivel, Nivel_PELI, etc.)
+            posibles_nivel = [c for c in gdf.columns if any(k in c.upper() for k in ['NIVEL', 'LEVEL', 'CLASS', 'CLAS'])]
+            if posibles_nivel:
+                elegido = posibles_nivel[0]
+                print(f"      ℹ️ Usando columna '{elegido}' de {friendly_layer_name} como '{expected_name}' (heurística de nivel)")
+                gdf[expected_name] = gdf[elegido]
+                return expected_name
 
-        # PENDIENTE: buscar 'PESO' con prioridad
-        if not ensure_weight_column(gdf_pendiente, 'PESO', 'PENDIENTE', priority_names=['PESO']):
+            # no se encontró ninguna columna adecuada
+            return None
+
+        # PENDIENTE: buscar 'PESO' con prioridad y normalizar
+        col_pend = ensure_weight_column(gdf_pendiente, 'PESO', 'PENDIENTE', priority_names=['PESO'])
+        if not col_pend:
             raise ValueError(f"La columna de peso para PENDIENTE no existe. Columnas disponibles: {list(gdf_pendiente.columns)}")
 
         # GEOMORFOLOGÍA: buscar columnas de peso
-        if not ensure_weight_column(gdf_geomorfo, 'PESO_GEOMO', 'GEOMORFOLOGÍA'):
+        col_geomo = ensure_weight_column(gdf_geomorfo, 'PESO_GEOMO', 'GEOMORFOLOGÍA')
+        if not col_geomo:
             raise ValueError(f"La columna de peso para GEOMORFOLOGÍA no existe. Columnas disponibles: {list(gdf_geomorfo.columns)}")
 
         # PP MÁXIMA: buscar 'Nivel' con prioridad
-        if not ensure_weight_column(gdf_ppmax, 'Nivel', 'PP MÁXIMA', priority_names=['Nivel']):
+        col_pp = ensure_weight_column(gdf_ppmax, 'Nivel', 'PP MÁXIMA', priority_names=['Nivel'])
+        if not col_pp:
             # Si 'Nivel' no está, intentar extraer desde otras columnas categóricas comunes (Clase/Categoria)
             cat_candidates = [c for c in gdf_ppmax.columns if any(k in c.upper() for k in ['CLAS', 'CATEG', 'CAT', 'LEVEL', 'CLASS'])]
             if cat_candidates:
@@ -1396,9 +1747,10 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
                 gdf_rios['PESO_RIO'] = 1
 
         # GEOLOGÍA: buscar primero 'PESO_GEOL' (columna correcta), luego fallback a 'PESO_GEOMO'
-        if not ensure_weight_column(gdf_geologia, 'PESO_GEOL', 'GEOLOGÍA', priority_names=['PESO_GEOL', 'PESO_GEOMO']):
+        col_geol = ensure_weight_column(gdf_geologia, 'PESO_GEOL', 'GEOLOGÍA', priority_names=['PESO_GEOL', 'PESO_GEOMO'])
+        if not col_geol:
             raise ValueError(f"La columna de peso para GEOLOGÍA no existe. Columnas disponibles: {list(gdf_geologia.columns)}")
-        
+
         print(f"\n   ✅ Todas las 5 capas cargadas exitosamente")
         
     except Exception as e:
@@ -1492,6 +1844,74 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
         if gdf_rios_clip is not None:
             gdf_rios_clip = filter_polygons(gdf_rios_clip, 'RÍOS')
 
+        # Antes de la intersección, estandarizar las columnas de peso para evitar que
+        # gpd.overlay genere sufijos (_1, _2) que hagan perder el nombre 'Nivel'.
+        def standardize_weight_column_after_clip(gdf_clip, layer_key):
+            if gdf_clip is None:
+                return
+            try:
+                if layer_key == 'PENDI':
+                    target = 'PESO_PENDI'
+                    if 'PESO' in gdf_clip.columns:
+                        gdf_clip[target] = pd.to_numeric(gdf_clip['PESO'], errors='coerce').fillna(0).astype(float)
+                    else:
+                        cand = [c for c in gdf_clip.columns if any(k in c.upper() for k in ['PESO','NIVEL','LEVEL','CLAS'])]
+                        if cand:
+                            gdf_clip[target] = pd.to_numeric(gdf_clip[cand[0]], errors='coerce').fillna(0).astype(float)
+                elif layer_key == 'GEOMO':
+                    target = 'PESO_GEOMO'
+                    if 'PESO_GEOMO' in gdf_clip.columns:
+                        gdf_clip[target] = pd.to_numeric(gdf_clip['PESO_GEOMO'], errors='coerce').fillna(0).astype(float)
+                    else:
+                        cand = [c for c in gdf_clip.columns if 'PESO' in c.upper() or 'GEOM' in c.upper()]
+                        if cand:
+                            gdf_clip[target] = pd.to_numeric(gdf_clip[cand[0]], errors='coerce').fillna(0).astype(float)
+                elif layer_key == 'PPMAX':
+                    target = 'PESO_PPMAX'
+                    if 'Nivel' in gdf_clip.columns:
+                        gdf_clip[target] = pd.to_numeric(gdf_clip['Nivel'], errors='coerce').fillna(0).astype(float)
+                    else:
+                        cand = [c for c in gdf_clip.columns if any(k in c.upper() for k in ['TR','TR50','CLAS','CLASE','CAT','CATEG','PESO','NIVEL'])]
+                        if cand:
+                            col = cand[0]
+                            vals_num = pd.to_numeric(gdf_clip[col], errors='coerce')
+                            if vals_num.notna().sum() > 0:
+                                gdf_clip[target] = vals_num.fillna(0).astype(float)
+                            else:
+                                unique_vals = list(gdf_clip[col].dropna().unique())
+                                mapping = {v: i + 1 for i, v in enumerate(sorted(unique_vals, key=lambda x: str(x)))}
+                                gdf_clip[target] = gdf_clip[col].map(mapping).fillna(0).astype(float)
+                        else:
+                            gdf_clip[target] = 0.0
+                elif layer_key == 'RIO':
+                    target = 'PESO_RIO'
+                    if 'PESO_RIO' not in gdf_clip.columns:
+                        cand = [c for c in gdf_clip.columns if 'PESO' in c.upper()]
+                        if cand:
+                            gdf_clip[target] = pd.to_numeric(gdf_clip[cand[0]], errors='coerce').fillna(1).astype(float)
+                        else:
+                            gdf_clip[target] = 1.0
+                elif layer_key == 'GEOL':
+                    target = 'PESO_GEOL'
+                    if 'PESO_GEOL' in gdf_clip.columns:
+                        gdf_clip[target] = pd.to_numeric(gdf_clip['PESO_GEOL'], errors='coerce').fillna(0).astype(float)
+                    else:
+                        cand = [c for c in gdf_clip.columns if 'PESO' in c.upper() or 'GEOL' in c.upper()]
+                        if cand:
+                            gdf_clip[target] = pd.to_numeric(gdf_clip[cand[0]], errors='coerce').fillna(0).astype(float)
+                        else:
+                            gdf_clip[target] = 0.0
+            except Exception as e:
+                print(f"      ⚠️ standardize_weight_column_after_clip fallo para {layer_key}: {e}")
+
+        # Aplicar normalización de nombres a cada capa recortada
+        standardize_weight_column_after_clip(gdf_pendiente_clip, 'PENDI')
+        standardize_weight_column_after_clip(gdf_geomorfo_clip, 'GEOMO')
+        standardize_weight_column_after_clip(gdf_ppmax_clip, 'PPMAX')
+        standardize_weight_column_after_clip(gdf_geologia_clip, 'GEOL')
+        if gdf_rios_clip is not None:
+            standardize_weight_column_after_clip(gdf_rios_clip, 'RIO')
+
         # Intersección dinámica de las capas disponibles (omite ríos si fue omitido)
         gdfs_to_intersect = [gdf_pendiente_clip, gdf_geomorfo_clip, gdf_ppmax_clip]
         if gdf_rios_clip is not None:
@@ -1508,102 +1928,134 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             gdf_inter = gpd.overlay(gdf_inter, next_gdf, how='intersection')
 
         gdf_peligro = gdf_inter
-        
-        # 🆕 VERIFICAR Y LIMPIAR NOMBRES DE COLUMNAS
+
+        # Seguridad extra: si tras las overlays se perdieron/renombraron columnas como 'Nivel',
+        # detectarlas (p.ej. 'Nivel_1') y crear/normalizar 'PESO_PPMAX' para el cálculo final.
+        try:
+            import re
+            pp_candidates = [c for c in gdf_peligro.columns if re.search(r'NIVEL', c, re.I)]
+            if 'PESO_PPMAX' not in gdf_peligro.columns:
+                if 'Nivel' in gdf_peligro.columns:
+                    gdf_peligro['PESO_PPMAX'] = pd.to_numeric(gdf_peligro['Nivel'], errors='coerce').fillna(0).astype(float)
+                    print("      ℹ️ 'PESO_PPMAX' creado a partir de 'Nivel' en gdf_peligro")
+                elif pp_candidates:
+                    chosen = pp_candidates[0]
+                    gdf_peligro['PESO_PPMAX'] = pd.to_numeric(gdf_peligro[chosen], errors='coerce').fillna(0).astype(float)
+                    print(f"      ℹ️ 'PESO_PPMAX' creado a partir de columna encontrada '{chosen}' en gdf_peligro")
+        except Exception as e:
+            print(f"      ⚠️ No se pudo normalizar columna PPMAX tras overlay: {e}")
+
+        # 🆕 VERIFICAR Y LIMPIAR NOMBRES DE COLUMNAS (MEJORADO)
         print("\n   📋 Verificando columnas después de intersección...")
         print(f"      Columnas disponibles: {list(gdf_peligro.columns)}")
 
-        # Función auxiliar para localizar columnas por palabras clave (insensible a mayúsculas)
-        def find_col_by_keywords(candidate_cols, keywords_all=None, keywords_any=None, exclude_keywords=None):
-            keywords_all = [k.upper() for k in (keywords_all or [])]
-            keywords_any = [k.upper() for k in (keywords_any or [])]
-            exclude_keywords = [k.upper() for k in (exclude_keywords or [])]
-            for c in candidate_cols:
-                cu = c.upper()
-                if any(ex in cu for ex in exclude_keywords):
-                    continue
-                ok_all = all(k in cu for k in keywords_all) if keywords_all else True
-                ok_any = any(k in cu for k in keywords_any) if keywords_any else True
-                if ok_all and ok_any:
-                    return c
+        # Función auxiliar más tolerante para localizar una columna por fragmentos de nombre
+        def find_column_like(cols, candidates):
+            # candidates: list of substrings to try in order
+            for cand in candidates:
+                cu = cand.upper()
+                for c in cols:
+                    if cu in c.upper():
+                        return c
             return None
 
         cols_list = list(gdf_peligro.columns)
 
-        # Buscar columnas por prioridad para evitar capturar la primera columna que contenga sólo 'PESO'
-        col_geomo = find_col_by_keywords(cols_list, keywords_all=['PESO','GEOMO'], keywords_any=['GEOMO','PESO']) or find_col_by_keywords(cols_list, keywords_any=['GEOMO'])
-        # Para Geología, buscar primero PESO_GEOL (la correcta), luego PESO_GEOMO como fallback
-        col_geol  = find_col_by_keywords(cols_list, keywords_all=['PESO','GEOL'], keywords_any=['GEOL']) or find_col_by_keywords(cols_list, keywords_any=['GEOL','GEOMO'])
-        col_rio   = find_col_by_keywords(cols_list, keywords_all=['PESO','RIO'],  keywords_any=['RIO','PESO']) or find_col_by_keywords(cols_list, keywords_any=['RIO'])
-        col_ppmax = find_col_by_keywords(cols_list, keywords_any=['NIVEL','LEVEL','PP','TR50','PRECIP'])
-
-        # Para pendiente buscamos una columna 'PESO' que no haya sido identificada como geomo/geol/rio
-        excluded = []
-        if col_geomo: excluded.append(col_geomo.upper())
-        if col_geol:  excluded.append(col_geol.upper())
-        if col_rio:   excluded.append(col_rio.upper())
-
-        col_pendi = find_col_by_keywords(cols_list, keywords_any=['PESO'], exclude_keywords=excluded)
-
-        print(f"\n   📊 Columnas identificadas:")
-        detected = []
-        if col_pendi:
-            detected.append(("Pendiente", col_pendi))
-        if col_geomo:
-            detected.append(("Geomorfología", col_geomo))
-        if col_ppmax:
-            detected.append(("PP Máxima", col_ppmax))
-        if col_rio:
-            detected.append(("Distancia Ríos", col_rio))
-        if col_geol:
-            detected.append(("Geología", col_geol))
-
-        if detected:
-            for label, cname in detected:
-                print(f"      - {label}: {cname}")
-        else:
-            print("      Ninguna columna de peso identificada (todas None)")
-        
-        # Verificar cuáles parámetros tenemos presentes y obtener sus columnas
-        present_cols = {}
-        weights_map = {
-            'PENDI': 0.5,
-            'GEOMO': 0.5,
-            'PPMAX': 1.0,
-            'RIO': 2.5,
-            'GEOL': 0.5
+        # Prioridades basadas en los nombres que garantizamos antes de la intersección
+        # (la lógica ensure_weight_column crea/asegura estas columnas con nombres esperados)
+        priority = {
+            'PENDI': ['PESO_PENDI', 'PESO_PEND', 'PESO', 'PESO_PENDIENTE', 'PESO_'],
+            'GEOMO': ['PESO_GEOMO', 'PESO_GEOM', 'PESO_GEOMORFO', 'PESO_'],
+            'PPMAX': ['NIVEL_PELI', 'NIVEL', 'PESO_PPMAX', 'PESO', 'Nivel'],
+            'RIO':   ['PESO_RIO', 'PESO_RIOS', 'PESO'],
+            'GEOL':  ['PESO_GEOL', 'PESO_GEO', 'PESO']
         }
 
-        if col_pendi:
-            present_cols['PENDI'] = col_pendi
-        if col_geomo:
-            present_cols['GEOMO'] = col_geomo
-        if col_ppmax:
-            present_cols['PPMAX'] = col_ppmax
-        if col_rio:
-            present_cols['RIO'] = col_rio
-        if col_geol:
-            present_cols['GEOL'] = col_geol
+        # Buscar columnas candidatas en el GeoDataFrame resultante
+        detected = {}
+        for key, candidates in priority.items():
+            found = find_column_like(cols_list, candidates)
+            if found:
+                detected[key] = found
 
-        if not present_cols:
-            raise ValueError("No se encontraron columnas de peso válidas tras la intersección")
-        
+        # Si no se detectó alguna columna, intentar heurística más amplia
+        if 'PENDI' not in detected:
+            detected['PENDI'] = find_column_like(cols_list, ['PESO', 'PESO_PENDI'])
+        if 'GEOMO' not in detected:
+            detected['GEOMO'] = find_column_like(cols_list, ['PESO_GEOMO', 'PESO'])
+        if 'PPMAX' not in detected:
+            detected['PPMAX'] = find_column_like(cols_list, ['NIVEL', 'PESO'])
+        if 'RIO' not in detected:
+            detected['RIO'] = find_column_like(cols_list, ['PESO_RIO', 'PESO'])
+        if 'GEOL' not in detected:
+            detected['GEOL'] = find_column_like(cols_list, ['PESO_GEOL', 'PESO'])
+
+        print(f"\n   📊 Columnas identificadas (post-clean):")
+        for k, v in detected.items():
+            if v:
+                print(f"      - {k}: {v}")
+
+        # Pesos por parámetro (valores por defecto)
+        weights_map = {'PENDI': 0.5, 'GEOMO': 0.5, 'PPMAX': 1.0, 'RIO': 2.5, 'GEOL': 0.5}
+
+        # Normalizar el GeoDataFrame: conservar solo columnas útiles (pesos y metadatos seleccionados)
+        keep_meta = []
+        # añadir campos descriptivos si existen
+        for meta in ['UNIDAD_GEO', 'GEOLOGIA', 'DESCRIPTOR', 'etiqueta', 'INTERPRETA', 'Name', 'NOMBRE', 'ID', 'Area', 'Hectares']:
+            if meta in cols_list:
+                keep_meta.append(meta)
+
+        # Priorizar columnas normalizadas si existen (creadas por ensure_weight_column)
+        posibles_pesos = ['PESO', 'PESO_GEOMO', 'PESO_GEOL', 'PESO_RIO', 'PESO_PENDI', 'NIVEL']
+        pesos_use = [p for p in posibles_pesos if p in cols_list]
+
+        # Si no hay columnas explícitas, intentar heurística amplia
+        if not pesos_use:
+            pesos_use = [c for c in cols_list if any(k in c.upper() for k in ['PESO', 'NIVEL', 'LEVEL', 'CLASS'])]
+
+        cols_to_keep = list(dict.fromkeys(pesos_use + keep_meta + ['geometry']))
+
+        # Filtrar sólo columnas existentes, evitando sufijos automáticos (_1, _2...)
+        cleaned = gdf_peligro.loc[:, [c for c in cols_to_keep if c in gdf_peligro.columns]].copy()
+        gdf_peligro = cleaned.reset_index(drop=True)
+
+        # Mostrar qué columnas se usarán para el cálculo de peligro (inspección)
+        peso_cols = [c for c in gdf_peligro.columns if any(k in c.upper() for k in ['PESO', 'NIVEL', 'LEVEL', 'CLASS'])]
+        print(f"      ℹ️ Columnas seleccionadas para cálculo de PELIGRO: {peso_cols}")
+
         # 🆕 CALCULAR EL ÍNDICE DE PELIGRO (ponderación dinámica según parámetros disponibles)
         print("\n   [5/5] Calculando índice de peligro (ponderación dinámica)...")
 
+        # Reconstruir present_cols en base a las columnas que realmente quedaron en gdf_peligro
+        present_cols = {}
+        for key in ['PENDI', 'GEOMO', 'PPMAX', 'RIO', 'GEOL']:
+            colname = detected.get(key)
+            if colname and colname in gdf_peligro.columns:
+                present_cols[key] = colname
+            elif colname:
+                print(f"      ⚠️ Columna identificada para {key} ('{colname}') no está presente tras la limpieza; se omitirá.")
+
+        if not present_cols:
+            raise ValueError("No se encontraron columnas de peso válidas tras la intersección")
+
         # Sumar los pesos disponibles
-        peso_total = sum(weights_map[k] for k in present_cols.keys())
+        peso_total = sum(weights_map.get(k, 1.0) for k in present_cols.keys())
         if peso_total <= 0:
             raise ValueError("Peso total inválido (0) — no hay parámetros disponibles para calcular peligro")
 
-        # Construir la suma ponderada de forma dinámica
+        # Construir la suma ponderada de forma dinámica usando sólo columnas presentes
         suma_expresion = None
         for key, colname in present_cols.items():
             w = weights_map.get(key, 1.0)
+            if colname not in gdf_peligro.columns:
+                print(f"      ⚠️ Omitiendo columna faltante durante suma: {colname}")
+                continue
+            # Asegurar tipo numérico para la operación
+            series = pd.to_numeric(gdf_peligro[colname], errors='coerce').fillna(0)
             if suma_expresion is None:
-                suma_expresion = w * gdf_peligro[colname]
+                suma_expresion = w * series
             else:
-                suma_expresion = suma_expresion + w * gdf_peligro[colname]
+                suma_expresion = suma_expresion + w * series
 
         gdf_peligro['PELIGRO'] = suma_expresion / float(peso_total)
 
@@ -1643,7 +2095,10 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
                 # Calcular medias ponderadas por área para cada capa usando los GDF recortados
                 fallback_vals = {}
                 try:
-                    if 'PESO' in gdf_pendiente_clip.columns:
+                    if 'PESO_PENDI' in gdf_pendiente_clip.columns:
+                        v = area_weighted_mean(gdf_pendiente_clip, 'PESO_PENDI')
+                        if v is not None: fallback_vals['PENDI'] = v
+                    elif 'PESO' in gdf_pendiente_clip.columns:
                         v = area_weighted_mean(gdf_pendiente_clip, 'PESO')
                         if v is not None: fallback_vals['PENDI'] = v
                 except Exception:
@@ -1655,7 +2110,11 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
                 except Exception:
                     pass
                 try:
-                    if 'Nivel' in gdf_ppmax_clip.columns:
+                    # Preferir PESO_PPMAX (estandarizado), sino Nivel
+                    if 'PESO_PPMAX' in gdf_ppmax_clip.columns:
+                        v = area_weighted_mean(gdf_ppmax_clip, 'PESO_PPMAX')
+                        if v is not None: fallback_vals['PPMAX'] = v
+                    elif 'Nivel' in gdf_ppmax_clip.columns:
                         v = area_weighted_mean(gdf_ppmax_clip, 'Nivel')
                         if v is not None: fallback_vals['PPMAX'] = v
                 except Exception:
@@ -1775,8 +2234,9 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
 
     # VISUALIZAR CAPA DE PELIGRO
     print("   🎨 Renderizando mapa de peligro...")
-    gdf_peligro.plot(ax=ax_main, color=gdf_peligro['COLOR'], edgecolor='black', 
-                     linewidth=0.2, alpha=0.7, zorder=4)
+    # Mostrar polígonos de peligro SIN contorno para micro-shapes
+    gdf_peligro.plot(ax=ax_main, color=gdf_peligro['COLOR'], edgecolor='none', 
+                     linewidth=0.0, alpha=0.85, zorder=4)
     
     # VISUALIZAR CENTROS POBLADOS
     if gdf_centros_pob is not None:
@@ -1787,14 +2247,17 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
             
             if len(centros_en_mapa) > 0:
                 # Plotear puntos de centros poblados
-                centros_en_mapa.plot(ax=ax_main, 
-                                    color='#006400',  # Verde oscuro
-                                    edgecolor='white', 
-                                    markersize=40,
-                                    marker='o',
-                                    linewidth=1.0,
-                                    alpha=0.95,
-                                    zorder=10)
+                # Dibujar puntos de centros poblados en negro, mucho más pequeños, sin halo blanco
+                # Dibujar puntos con scatter para controlar tamaño visible y z-order
+                try:
+                    xs = centros_en_mapa.geometry.x.values
+                    ys = centros_en_mapa.geometry.y.values
+                    # 's' es el área del marcador en puntos^2; usar 6 para punto más pequeño
+                    # color plomo oscuro para mejor visibilidad sobre fondos claros
+                    ax_main.scatter(xs, ys, s=6, c='#4b4b4b', marker='o', edgecolors='none', zorder=14)
+                except Exception:
+                    # Fallback: usar plot si scatter falla
+                    centros_en_mapa.plot(ax=ax_main, marker='o', markersize=3, color='#4b4b4b', edgecolor='none', zorder=14)
                 
                 # 🎯 AGREGAR ETIQUETAS PERPENDICULARES AL LÍMITE DISTRITAL (CON SEPARACIÓN)
                 agregar_etiquetas_ordenadas_circularmente(gdf_distrito, centros_en_mapa, ax_main, radio_offset=0.12)
@@ -1826,17 +2289,17 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
     legend_elements = [Patch(facecolor='white', edgecolor='white', label='SUSCEPTIBILIDAD:', linewidth=0)]
     
     legend_elements.extend([
-        Patch(facecolor=COLORES_PELIGRO[3], edgecolor='black', label='Muy Alta'), 
-        Patch(facecolor=COLORES_PELIGRO[2], edgecolor='black', label='Alta'),
-        Patch(facecolor=COLORES_PELIGRO[1], edgecolor='black', label='Media'),
-        Patch(facecolor=COLORES_PELIGRO[0], edgecolor='black', label='Baja')
+        Patch(facecolor=COLORES_PELIGRO[3], edgecolor='none', label='Muy Alta'), 
+        Patch(facecolor=COLORES_PELIGRO[2], edgecolor='none', label='Alta'),
+        Patch(facecolor=COLORES_PELIGRO[1], edgecolor='none', label='Media'),
+        Patch(facecolor=COLORES_PELIGRO[0], edgecolor='none', label='Baja')
     ])
 
     legend_elements.extend([
         Line2D([0], [0], color='black', lw=1.5, linestyle='-', label='Límite Distrital'),
-        Line2D([0], [0], marker='o', color='w', markerfacecolor='#006400',  # Verde oscuro
-               markeredgecolor='white', markersize=7, linestyle='None', 
-               label='Centro Poblado', markeredgewidth=1.0)
+         Line2D([0], [0], marker='o', color='w', markerfacecolor='black',
+             markeredgecolor='none', markersize=5, linestyle='None', 
+             label='Centro Poblado')
     ])
 
     leg = ax_leyenda.legend(handles=legend_elements, loc='center', ncol=1, frameon=True, fontsize=7,
@@ -1919,8 +2382,8 @@ def generar_mapa_peligro(nombre_usuario, departamento_sel, provincia_sel, distri
 if __name__ == "__main__":
     # EJEMPLO DE USO
     generar_mapa_peligro(
-        nombre_usuario="USUARIO_TEST21",
+        nombre_usuario="USUARIO_TEST100",
         departamento_sel="PIURA",
         provincia_sel="PIURA",
-        distrito_sel="PIURA"
+        distrito_sel="TAMBO GRANDE"
     )

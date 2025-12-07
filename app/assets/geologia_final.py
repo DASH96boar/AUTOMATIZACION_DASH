@@ -14,11 +14,16 @@ from matplotlib.patches import Polygon, Rectangle, Patch
 from matplotlib.lines import Line2D
 import datetime
 import matplotlib.colors as mcolors
+import math
+import pandas as pd
 
 # --- RUTA BASE ORIGINAL ---
 ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
 
-AMARILLO_CLARO = "#FFEE58"
+AMARILLO_CLARO = "#E6D07A"  # tono menos brillante que el original
+LABEL_COLOR = "#0B66C3"     # azul para etiquetas de alcance/etiqueta
+COLOR_FOCUS = "#C03030"     # rojo menos saturado para límites/área de foco
+PAISES_COLOR = "#CFCFCF"    # plomo claro para la capa de países
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 🎨 FUNCIÓN PARA GENERAR PALETA DE COLORES GEOLÓGICOS
@@ -194,6 +199,43 @@ def cargar_shapefile(nombre, alias):
         print(f"   ❌ Error cargando {alias} desde {path}: {e}")
         return None
 
+
+def cargar_shapfile_por_ruta(ruta_posible, alias=None):
+    """Intenta cargar un shapefile desde una ruta absoluta o su nombre buscando en `ruta_base`.
+    Devuelve un GeoDataFrame proyectado a EPSG:3857 o `None` si falla."""
+    if ruta_posible is None:
+        return None
+
+    candidatos = []
+    # Si la ruta es absoluta y existe
+    if os.path.isabs(ruta_posible) and os.path.exists(ruta_posible):
+        candidatos.append(ruta_posible)
+
+    # Intentar ruta relativa dentro de ruta_base
+    ruta_rel = os.path.join(ruta_base, os.path.relpath(ruta_posible, '/workspaces/AUTOMATIZACION_DASH/PRUEBA'))
+    if os.path.exists(ruta_rel):
+        candidatos.append(ruta_rel)
+
+    # Intentar buscar por nombre de archivo
+    nombre_archivo = os.path.basename(ruta_posible)
+    encontrado = buscar_shapefile(nombre_archivo)
+    if encontrado:
+        candidatos.append(encontrado)
+
+    for ruta in candidatos:
+        try:
+            gdf = gpd.read_file(ruta)
+            if gdf.crs is None:
+                gdf.set_crs(epsg=4326, inplace=True)
+            gdf = gdf.to_crs(epsg=3857)
+            print(f"   ✅ Cargado {alias or nombre_archivo} desde: {ruta}")
+            return gdf
+        except Exception as e:
+            print(f"   ⚠️ Error cargando {alias or nombre_archivo} desde {ruta}: {e}")
+
+    print(f"   ❌ No se pudo localizar ni cargar: {alias or nombre_archivo}")
+    return None
+
 def grillado_utm_proyectado(ax, bbox, ndiv=8):
     x0, y0, x1, y1 = bbox
     
@@ -273,12 +315,33 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
         bbox_geom = gdf_dpto_sel.total_bounds
         dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.12, (bbox_geom[3] - bbox_geom[1]) * 0.12
     elif tipo_mapa == "distrito":
-        provincia_seleccionada_geom = gdf_prov_sel.geometry.unary_union
-        geoms_vecinas = [prov.geometry for _, prov in gdf_provincias.iterrows() 
-                        if prov[col_prov] != provincia_sel and prov.geometry.touches(provincia_seleccionada_geom)]
-        area_de_interes = gpd.GeoSeries([provincia_seleccionada_geom] + geoms_vecinas).unary_union
-        bbox_geom = area_de_interes.bounds
-        dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.15, (bbox_geom[3] - bbox_geom[1]) * 0.15
+        # Para el inset de distrito queremos un acercamiento mayor
+        # Usar preferentemente la extensión de la provincia seleccionada (más zoom)
+        try:
+            if gdf_prov_sel is not None and not gdf_prov_sel.empty:
+                bbox_geom = gdf_prov_sel.total_bounds
+                # reducir el buffer para acercar más (5% de la dimensión)
+                dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.05, (bbox_geom[3] - bbox_geom[1]) * 0.05
+            else:
+                # fallback: usar la heurística previa (provincia + vecinas)
+                provincia_seleccionada_geom = gdf_prov_sel.geometry.unary_union if gdf_prov_sel is not None else None
+                geoms_vecinas = [prov.geometry for _, prov in gdf_provincias.iterrows() 
+                                if prov[col_prov] != provincia_sel and provincia_seleccionada_geom is not None and prov.geometry.touches(provincia_seleccionada_geom)]
+                area_de_interes = gpd.GeoSeries([provincia_seleccionada_geom] + geoms_vecinas).unary_union
+                bbox_geom = area_de_interes.bounds
+                dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.08, (bbox_geom[3] - bbox_geom[1]) * 0.08
+        except Exception:
+            # en caso de error, usar la provincia si está disponible o un fallback amplio
+            try:
+                if gdf_prov_sel is not None and not gdf_prov_sel.empty:
+                    bbox_geom = gdf_prov_sel.total_bounds
+                    dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.05, (bbox_geom[3] - bbox_geom[1]) * 0.05
+                else:
+                    bbox_geom = gdf_departamentos.total_bounds
+                    dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
+            except Exception:
+                bbox_geom = gdf_departamentos.total_bounds
+                dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
     else:
         bbox_geom = gdf_departamentos.total_bounds
         dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
@@ -293,14 +356,265 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
     
     if tipo_mapa == "pais":
         if gdf_base_map is not None:
-            gdf_base_map.plot(ax=ax, color="#f0eee8", edgecolor="black", linewidth=0.4, zorder=1)
+            # pintar países con tono plomo claro
+            gdf_base_map.plot(ax=ax, color=PAISES_COLOR, edgecolor="black", linewidth=0.4, zorder=1)
         if gdf_context is not None:
-            gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor="black", linewidth=0.7, zorder=3)
+            # Pintar otros departamentos en plomo claro y el departamento seleccionado en amarillo
+            try:
+                col_name_dpto = next((c for c in ['NOMBDEP', 'NOMBRE', 'NOMB', 'NOMBDEP', 'DEPARTAMEN'] if c in gdf_context.columns), None)
+                if col_name_dpto is not None and departamento_sel is not None:
+                    try:
+                        gdf_context[gdf_context[col_name_dpto] != departamento_sel].plot(
+                            ax=ax, color=PAISES_COLOR, edgecolor='black', linewidth=0.4, zorder=1)
+                    except Exception:
+                        pass
+                    try:
+                        gdf_context[gdf_context[col_name_dpto] == departamento_sel].plot(
+                            ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+                    except Exception:
+                        pass
+                else:
+                    # fallback: pintar todo el contexto en amarillo
+                    gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+            except Exception:
+                try:
+                    gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+                except Exception:
+                    pass
+        # Etiquetar países con letra azul
+        try:
+            if gdf_base_map is not None:
+                # intentar columnas estándar
+                # Priorizar columna con nombres completos en español si existe (según datos adjuntos)
+                possible_name_cols = ['NOMB_PAIS', 'NOMB', 'NOMBRE', 'NAME', 'Name', 'PAIS', 'PAÍS', 'COUNTRY', 'COUNTRY_NAME', 'NAME_0', 'ADMIN']
+                name_col = next((c for c in possible_name_cols if c in gdf_base_map.columns), None)
+                x0, y0, x1, y1 = bbox
+                for _, row in gdf_base_map.iterrows():
+                    if row.geometry is None:
+                        continue
+                    centroid = row.geometry.representative_point()
+                    # Solo etiquetar si la centroid está dentro del bbox visible
+                    if not (centroid.x >= x0 and centroid.x <= x1 and centroid.y >= y0 and centroid.y <= y1):
+                        continue
+
+                    label_val = None
+                    if name_col and pd.notna(row.get(name_col)):
+                        label_val = str(row.get(name_col))
+                    else:
+                        # fallback: buscar la primera columna con texto no vacío
+                        for col in row.index:
+                            val = row.get(col)
+                            if isinstance(val, str) and val.strip():
+                                label_val = val.strip()
+                                break
+
+                    # excluir etiqueta para Perú
+                    if label_val and label_val.strip().lower() not in ['peru', 'perú', 'república del perú', 'republica del perú']:
+                        ax.text(centroid.x, centroid.y, label_val, fontsize=6, color='black', ha='center', va='center', zorder=9,
+                                path_effects=[path_effects.withStroke(linewidth=0.8, foreground='white')])
+
+                # Forzar etiquetas específicas (Brasil y Chile) aunque su centroid esté fuera del bbox
+                def _get_label_from_row(r):
+                    if name_col and pd.notna(r.get(name_col)):
+                        return str(r.get(name_col))
+                    for c in r.index:
+                        v = r.get(c)
+                        if isinstance(v, str) and v.strip():
+                            return v.strip()
+                    return None
+
+                # Colocar las etiquetas en el extremo derecho del bbox (margen pequeño) para que siempre se vean
+                tx_edge = x1 - (x1 - x0) * 0.02
+                ty_top = y1 - (y1 - y0) * 0.12
+                ty_bottom = y0 + (y1 - y0) * 0.12
+
+                forced_list = [
+                    ('BRASIL', (tx_edge, ty_top)),
+                    ('CHILE',  (tx_edge, ty_bottom))
+                ]
+
+                for country_key, (tx, ty) in forced_list:
+                    found = None
+                    for _, r in gdf_base_map.iterrows():
+                        lab = _get_label_from_row(r)
+                        if lab and country_key in lab.upper():
+                            found = r
+                            break
+                    if found is not None:
+                        try:
+                            centroid_c = found.geometry.representative_point()
+                            # Dibujar anotación en el extremo con una cola hacia la geometría
+                            ax.annotate(_get_label_from_row(found), xy=(centroid_c.x, centroid_c.y), xytext=(tx, ty),
+                                        textcoords='data', fontsize=6, color='black', ha='center', va='center', zorder=12,
+                                        path_effects=[path_effects.withStroke(linewidth=0.8, foreground='white')],
+                                        arrowprops=dict(arrowstyle='-', linewidth=0.8, color='black', shrinkA=0, shrinkB=0))
+                        except Exception:
+                            pass
+                # Además, colocar etiquetas de países vecinos pegadas a Perú (con espacio prudencial)
+                try:
+                    # Buscar la fila de Perú para usar como referencia
+                    peru_row = None
+                    for _, r in gdf_base_map.iterrows():
+                        labr = _get_label_from_row(r)
+                        if labr and labr.strip().lower() in ['peru', 'perú', 'república del perú', 'republica del perú']:
+                            peru_row = r
+                            break
+
+                    if peru_row is not None:
+                        peru_cent = peru_row.geometry.representative_point()
+                        S = max(x1 - x0, y1 - y0)
+                        base_x = peru_cent.x + S * 0.03
+                        base_y = peru_cent.y
+                        spacing = S * 0.035  # espacio prudencial entre etiquetas
+
+                        vecinos = ['ECUADOR', 'COLOMBIA', 'BOLIVIA', 'BRASIL', 'CHILE']
+                        idx = 0
+                        for vecino in vecinos:
+                            # buscar fila del vecino
+                            found_v = None
+                            for _, r in gdf_base_map.iterrows():
+                                labv = _get_label_from_row(r)
+                                if labv and vecino in labv.upper():
+                                    found_v = r
+                                    break
+                            if found_v is None:
+                                continue
+
+                            # si su centroid ya está dentro del bbox, omitimos (ya fue etiquetado)
+                            try:
+                                ccent = found_v.geometry.representative_point()
+                                if (ccent.x >= x0 and ccent.x <= x1 and ccent.y >= y0 and ccent.y <= y1):
+                                    continue
+                            except Exception:
+                                pass
+
+                            ty = base_y + (idx - len(vecinos)//2) * spacing
+                            try:
+                                ax.annotate(_get_label_from_row(found_v), xy=(ccent.x, ccent.y), xytext=(base_x, ty),
+                                            textcoords='data', fontsize=6, color='black', ha='center', va='center', zorder=12,
+                                            path_effects=[path_effects.withStroke(linewidth=0.8, foreground='white')],
+                                            arrowprops=dict(arrowstyle='-', linewidth=0.8, color='black', shrinkA=0, shrinkB=0))
+                            except Exception:
+                                pass
+                            idx += 1
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Etiquetar océano (si está disponible) dentro del bbox
+        try:
+            if gdf_oceano is not None:
+                # Priorizar columna `CNTRY_NAME` (observada en los datos de océano), luego otras opciones
+                oce_col = next((c for c in ['CNTRY_NAME', 'CNTRY_NAM', 'NAME', 'Name', 'NOMBRE', 'OCÉANO', 'OCEANO', 'OCEAN', 'DESCRIP'] if c in gdf_oceano.columns), None)
+                if oce_col:
+                    x0, y0, x1, y1 = bbox
+                    for _, row in gdf_oceano.iterrows():
+                        if row.geometry is None:
+                            continue
+                        try:
+                            # Si el océano intersecta el bbox, etiquetamos en la intersección para que la etiqueta quede dentro
+                            bbox_poly = box(x0, y0, x1, y1)
+                            if row.geometry.intersects(bbox_poly):
+                                geom_int = row.geometry.intersection(bbox_poly)
+                                if not geom_int.is_empty:
+                                    label_point = geom_int.representative_point()
+                                else:
+                                    label_point = row.geometry.representative_point()
+                            else:
+                                # Si no intersecta, usar centroid habitual (posiblemente estará fuera y se omitirá)
+                                label_point = row.geometry.representative_point()
+
+                            # Etiqueta en azul sin halo (según petición)
+                            if label_point.x >= x0 and label_point.x <= x1 and label_point.y >= y0 and label_point.y <= y1:
+                                ax.text(label_point.x, label_point.y, str(row[oce_col]), fontsize=6, color=LABEL_COLOR, ha='center', va='center', zorder=8)
+                            else:
+                                # Si queda fuera, dibujar etiqueta en el borde derecho-centro con una cola, en azul sin halo
+                                tx = x1 - (x1 - x0) * 0.02
+                                ty = (y0 + y1) / 2
+                                ax.annotate(str(row[oce_col]), xy=(label_point.x, label_point.y), xytext=(tx, ty),
+                                            textcoords='data', fontsize=6, color=LABEL_COLOR, ha='center', va='center', zorder=8,
+                                            arrowprops=dict(arrowstyle='-', linewidth=0.8, color=LABEL_COLOR, shrinkA=0, shrinkB=0))
+                        except Exception:
+                            continue
+        except Exception:
+            pass
     elif tipo_mapa == "provincia":
-        if gdf_base_map is not None:
-            gdf_base_map.plot(ax=ax, color="#f0eee8", edgecolor="black", linewidth=0.4, zorder=1)
-        if gdf_context is not None:
-            gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor="black", linewidth=0.7, zorder=3)
+        # Pintar todos los departamentos en plomo claro y el departamento seleccionado en amarillo
+        try:
+            if gdf_departamentos is not None:
+                gdf_departamentos.plot(ax=ax, color=PAISES_COLOR, edgecolor='black', linewidth=0.4, zorder=1)
+        except Exception:
+            # fallback: si no está gdf_departamentos, usar gdf_base_map
+            try:
+                if gdf_base_map is not None:
+                    gdf_base_map.plot(ax=ax, color=PAISES_COLOR, edgecolor='black', linewidth=0.4, zorder=1)
+            except Exception:
+                pass
+
+        try:
+            # dibujar el departamento seleccionado en amarillo (puede llegar como gdf_dpto_sel o gdf_context)
+            dpto_sel_gdf = gdf_dpto_sel if gdf_dpto_sel is not None else gdf_context
+            if dpto_sel_gdf is not None and not dpto_sel_gdf.empty:
+                dpto_sel_gdf.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+        except Exception:
+            pass
+
+        # Etiquetar departamentos en negro, excepto el departamento seleccionado (no mostrarlo)
+        try:
+            if gdf_departamentos is not None:
+                col_name_dpto = next((c for c in ['NOMBDEP', 'NOMBRE', 'NOMB', 'NOMBDEP', 'DEPARTAMEN'] if c in gdf_departamentos.columns), None)
+                if col_name_dpto:
+                    x0, y0, x1, y1 = bbox
+                    for _, row in gdf_departamentos.iterrows():
+                        if row.geometry is None:
+                            continue
+                        # Omitir etiqueta si corresponde al departamento seleccionado
+                        try:
+                            vname = str(row[col_name_dpto]) if pd.notna(row[col_name_dpto]) else ''
+                        except Exception:
+                            vname = ''
+                        if vname.strip().upper() == (departamento_sel or '').strip().upper():
+                            continue
+
+                        centroid = row.geometry.representative_point()
+                        # Solo etiquetar si la centroid está dentro del bbox visible
+                        if centroid.x >= x0 and centroid.x <= x1 and centroid.y >= y0 and centroid.y <= y1:
+                            ax.text(centroid.x, centroid.y, vname, fontsize=6, color='black', ha='center', va='center', zorder=9)
+        except Exception:
+            pass
+
+        # Etiquetar océano en azul sin halo si está disponible
+        try:
+            if gdf_oceano is not None:
+                oce_col = next((c for c in ['CNTRY_NAME', 'CNTRY_NAM', 'NAME', 'Name', 'NOMBRE', 'OCÉANO', 'OCEANO', 'OCEAN', 'DESCRIP'] if c in gdf_oceano.columns), None)
+                if oce_col:
+                    x0, y0, x1, y1 = bbox
+                    for _, row in gdf_oceano.iterrows():
+                        if row.geometry is None:
+                            continue
+                        try:
+                            bbox_poly = box(x0, y0, x1, y1)
+                            if row.geometry.intersects(bbox_poly):
+                                geom_int = row.geometry.intersection(bbox_poly)
+                                if not geom_int.is_empty:
+                                    label_point = geom_int.representative_point()
+                                else:
+                                    label_point = row.geometry.representative_point()
+                            else:
+                                label_point = row.geometry.representative_point()
+
+                            if label_point.x >= x0 and label_point.x <= x1 and label_point.y >= y0 and label_point.y <= y1:
+                                ax.text(label_point.x, label_point.y, str(row[oce_col]), fontsize=6, color=LABEL_COLOR, ha='center', va='center', zorder=8)
+                            else:
+                                tx = x1 - (x1 - x0) * 0.02
+                                ty = (y0 + y1) / 2
+                                ax.annotate(str(row[oce_col]), xy=(label_point.x, label_point.y), xytext=(tx, ty),
+                                            textcoords='data', fontsize=6, color=LABEL_COLOR, ha='center', va='center', zorder=8,
+                                            arrowprops=dict(arrowstyle='-', linewidth=0.8, color=LABEL_COLOR, shrinkA=0, shrinkB=0))
+                        except Exception:
+                            continue
+        except Exception:
+            pass
     elif tipo_mapa == "distrito":
         if gdf_provincias is not None:
             gdf_provincias[gdf_provincias[col_prov] != provincia_sel].plot(
@@ -320,9 +634,15 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
             bbox=dict(facecolor="#4A90E2", edgecolor="black", boxstyle="round,pad=0.3", alpha=0.9))
     
     if is_focus_valid:
-        ax.text(gdf_focus.geometry.centroid.iloc[0].x, gdf_focus.geometry.centroid.iloc[0].y, 
-                etiqueta.upper(), color="white", fontsize=8, ha="center", va="center", zorder=9, 
-                path_effects=[path_effects.withStroke(linewidth=3, foreground="black")])
+        # Etiqueta del foco: en el mapa 'pais' usar texto más pequeño, negro y halo delgado; en otros mapas mantener azul
+        fx = gdf_focus.geometry.centroid.iloc[0].x
+        fy = gdf_focus.geometry.centroid.iloc[0].y
+        if tipo_mapa == "pais":
+            ax.text(fx, fy, etiqueta.upper(), color='black', fontsize=6, ha="center", va="center", zorder=9,
+                    path_effects=[path_effects.withStroke(linewidth=0.8, foreground='white')])
+        else:
+            ax.text(fx, fy, etiqueta.upper(), color=LABEL_COLOR, fontsize=8, ha="center", va="center", zorder=9,
+                    path_effects=[path_effects.withStroke(linewidth=3, foreground='white')])
     
     ax.set_xlim(bbox[0], bbox[2])
     ax.set_ylim(bbox[1], bbox[3])
@@ -354,7 +674,7 @@ def generar_mapa_geologia(nombre_usuario, departamento_sel, provincia_sel, distr
     gdf_distritos = cargar_shapefile("distrito", "Distritos del Perú")
     
     try:
-        gdf_paises = gpd.read_file(f"{ruta_base}/DATA/MAPA_DE_UBICACION/PAISES DE SUDAMERICA/Sudamérica.shp").to_crs(3857)
+        gdf_paises = gpd.read_file(f"{ruta_base}/DATA/MAPA_DE_UBICACION/PAISES_DE_SUDAMERICA/Sudamérica.shp").to_crs(3857)
         gdf_oceano = gpd.read_file(f"{ruta_base}/DATA/MAPA_DE_UBICACION/OCEANO/Océano.shp").to_crs(3857)
     except Exception as e:
         print(f"⚠️ Error cargando shapefiles de Países u Océano: {e}")
@@ -472,12 +792,90 @@ def generar_mapa_geologia(nombre_usuario, departamento_sel, provincia_sel, distr
     except Exception as e:
         print(f"   ⚠️ No se pudo cargar el mapa base: {e}")
         ax_main.set_facecolor("#e8e8e8")
+
+    # ---- CARGA Y DIBUJO DE CAPAS ADICIONALES SOLICITADAS ----
+    print("   📥 Cargando capas adicionales (lagos, ríos, vías)...")
+    capas_paths = {
+        'lagos': f"{ruta_base}/DATA/MAPA_DE_UBICACION/LAGOS/Lago_y_Laguna_IGN_IDEP_geogpsperu_SuyoPomalia.shp",
+        'rios': f"{ruta_base}/DATA/MAPA_DE_UBICACION/RIOS/rios_lineal_idep_ign_100k_geogpsperu.shp",
+        'vias_departamental': f"{ruta_base}/DATA/MAPA_DE_UBICACION/VIAS/VIA_DEPARTAMENTAL/red_vial_departamental_dic18.shp",
+        'vias_nacional': f"{ruta_base}/DATA/MAPA_DE_UBICACION/VIAS/VIA_NACIONAL/red_vial_nacional_dic18.shp",
+        'vias_vecinal': f"{ruta_base}/DATA/MAPA_DE_UBICACION/VIAS/VIA_VECINAL/red_vial_vecinal_dic18.shp",
+        'centros_poblados': f"{ruta_base}/DATA/CENTROS_POBLADOS/Centros_Poblados_INEI_geogpsperu_SuyoPomalia.shp",
+    }
+
+    gdf_lagos = cargar_shapfile_por_ruta(capas_paths['lagos'], alias='Lagos')
+    gdf_rios = cargar_shapfile_por_ruta(capas_paths['rios'], alias='Ríos')
+    gdf_vias_dep = cargar_shapfile_por_ruta(capas_paths['vias_departamental'], alias='Vías departamental')
+    gdf_vias_nac = cargar_shapfile_por_ruta(capas_paths['vias_nacional'], alias='Vías nacional')
+    gdf_vias_vec = cargar_shapfile_por_ruta(capas_paths['vias_vecinal'], alias='Vías vecinal')
+    gdf_centros = cargar_shapfile_por_ruta(capas_paths['centros_poblados'], alias='Centros Poblados')
+
+    # Función auxiliar para plotear con simbología fina (líneas delgadas o puntos pequeños)
+    def plot_capa_simbologia(gdf, ax, tipo='line', color='#000000', lw=0.6, markersize=6, zorder=10, alpha=0.9):
+        if gdf is None or gdf.empty:
+            return
+        geom_tipo = gdf.geom_type.iloc[0] if 'geom_type' in gdf.columns else gdf.geom_type.iloc[0]
+        try:
+            if geom_tipo.lower().startswith('point') or tipo == 'point':
+                gdf.plot(ax=ax, marker='o', color=color, markersize=markersize, zorder=zorder, alpha=alpha)
+            elif geom_tipo.lower().startswith('line') or tipo == 'line':
+                gdf.plot(ax=ax, color=color, linewidth=lw, zorder=zorder, alpha=alpha)
+            else:
+                # Polígonos
+                gdf.plot(ax=ax, facecolor=color, edgecolor='none', alpha=alpha, zorder=zorder)
+        except Exception:
+            # Intentar plotear según geom manually
+            try:
+                if gdf.geometry.iloc[0].geom_type in ['Point', 'MultiPoint']:
+                    gdf.plot(ax=ax, marker='o', color=color, markersize=markersize, zorder=zorder, alpha=alpha)
+                elif gdf.geometry.iloc[0].geom_type in ['LineString', 'MultiLineString']:
+                    gdf.plot(ax=ax, color=color, linewidth=lw, zorder=zorder, alpha=alpha)
+                else:
+                    gdf.plot(ax=ax, facecolor=color, edgecolor='none', alpha=alpha, zorder=zorder)
+            except Exception as e:
+                print(f"   ⚠️ Error al plotear capa: {e}")
+
+    # Recortar al distrito para evitar dibujar todo el país
+    try:
+        if gdf_lagos is not None:
+            gdf_lagos_c = gpd.clip(gdf_lagos, gdf_distrito)
+            plot_capa_simbologia(gdf_lagos_c, ax_main, tipo='polygon', color='#4DA6FF', alpha=0.6, zorder=2)
+
+        if gdf_rios is not None:
+            gdf_rios_c = gpd.clip(gdf_rios, gdf_distrito)
+            plot_capa_simbologia(gdf_rios_c, ax_main, tipo='line', color='#1f78b4', lw=0.7, zorder=12, alpha=0.9)
+
+        if gdf_vias_nac is not None:
+            gdf_vias_nac_c = gpd.clip(gdf_vias_nac, gdf_distrito)
+            plot_capa_simbologia(gdf_vias_nac_c, ax_main, tipo='line', color='#D62728', lw=0.9, zorder=13, alpha=0.95)
+
+        if gdf_vias_dep is not None:
+            gdf_vias_dep_c = gpd.clip(gdf_vias_dep, gdf_distrito)
+            plot_capa_simbologia(gdf_vias_dep_c, ax_main, tipo='line', color='#FF7F0E', lw=0.8, zorder=13, alpha=0.9)
+
+        if gdf_vias_vec is not None:
+            gdf_vias_vec_c = gpd.clip(gdf_vias_vec, gdf_distrito)
+            plot_capa_simbologia(gdf_vias_vec_c, ax_main, tipo='line', color='#8C564B', lw=0.6, zorder=13, alpha=0.85)
+    except Exception as e:
+        print(f"   ⚠️ Error al recortar/plotear capas adicionales: {e}")
+    # ---- FIN CAPAS ADICIONALES ----
+
     
     print("   🎨 Dibujando unidades geológicas...")
     for idx, unidad in enumerate(unidades_geologia):
         gdf_unidad = gdf_geologia_clipped[gdf_geologia_clipped[col_geologia] == unidad]
-        gdf_unidad.plot(ax=ax_main, color=paleta_geologia[idx], edgecolor='black',
-                       linewidth=0.5, alpha=0.75, zorder=4)
+        # Pintar unidades geológicas sin líneas de contorno para un aspecto más limpio
+        gdf_unidad.plot(ax=ax_main, color=paleta_geologia[idx], edgecolor='none',
+                       linewidth=0, alpha=0.85, zorder=4)
+
+    # Dibujar centros poblados (puntos pequeños, color plomo oscuro) encima de las unidades
+    try:
+        if 'gdf_centros' in locals() and gdf_centros is not None:
+            gdf_centros_c = gpd.clip(gdf_centros, gdf_distrito)
+            plot_capa_simbologia(gdf_centros_c, ax_main, tipo='point', color='#2f2f2f', markersize=6, zorder=16, alpha=0.95)
+    except Exception as e:
+        print(f"   ⚠️ Error al plotear Centros Poblados: {e}")
     
     gdf_distrito.plot(ax=ax_main, facecolor="none", edgecolor="red", linewidth=2,
                      linestyle='--', alpha=0.9, zorder=15)
@@ -487,54 +885,89 @@ def generar_mapa_geologia(nombre_usuario, departamento_sel, provincia_sel, distr
     ax_main.add_artist(ScaleBar(1, units="m", location="lower left", 
                                 box_alpha=0.6, border_pad=0.5, scale_loc='bottom'))
     
-    gs_memb_ley = gs_izquierda[2].subgridspec(1, 2, wspace=0.1)
-    ax_membrete = fig.add_subplot(gs_memb_ley[0])
+    # Reservar espacio en la esquina inferior izquierda para un logo,
+    # colocar un rectángulo marcador y acercar el membrete lo más posible
+    # Mantener el ancho original del membrete pero pegado al recuadro del logo
+    gs_memb_ley = gs_izquierda[2].subgridspec(1, 3, wspace=0.02, width_ratios=[0.4, 2.0, 1.0])
+
+    # Espacio para logo (dibujar rectángulo placeholder para colocar logo)
+    ax_logo = fig.add_subplot(gs_memb_ley[0])
+    ax_logo.axis('off')
+    # Dibujar rectángulo indicador en coordenadas del eje (ligero padding)
+    try:
+        from matplotlib.patches import Rectangle as MplRect
+        # Hacer el recuadro un poco más pequeño para aprovechar espacio
+        rect = MplRect((0.10, 0.08), 0.8, 0.84, transform=ax_logo.transAxes,
+                   facecolor='none', edgecolor='black', linewidth=1.4)
+        ax_logo.add_patch(rect)
+    except Exception:
+        pass
+
+    # Membrete: ahora en la columna central, justo a la derecha del rectángulo
+    ax_membrete = fig.add_subplot(gs_memb_ley[1])
     fig.canvas.draw()
     add_membrete(ax_membrete, departamento_sel, provincia_sel, distrito_sel, ax_main, fig)
-    
-    ax_leyenda = fig.add_subplot(gs_memb_ley[1])
+
+    # Caja de leyenda en la columna derecha
+    ax_leyenda = fig.add_subplot(gs_memb_ley[2])
     ax_leyenda.axis('off')
-    
-    legend_elements = []
-    
+
+    # --- Leyenda de GEOLOGÍA en el mapa principal (esquina superior izquierda) ---
     if len(unidades_geologia) > 0:
-        legend_elements.append(Patch(facecolor='white', edgecolor='white',
-                                     label='GEOLOGÍA:', linewidth=0))
-        
-        max_items_leyenda = min(5, len(unidades_geologia))
+        handles_geo = []
+        # Subtítulo de la leyenda: usar 'GEOLOGÍA' sin ':' (se formateará en negrita y alineado a la izquierda)
+        handles_geo.append(Patch(facecolor='white', edgecolor='white', label='GEOLOGÍA', linewidth=0))
+        max_items_leyenda = min(8, len(unidades_geologia))
         for idx in range(max_items_leyenda):
             unidad = unidades_geologia[idx]
-            nombre_corto = str(unidad)[:25] + '...' if len(str(unidad)) > 25 else str(unidad)
-            legend_elements.append(Patch(facecolor=paleta_geologia[idx],
-                                         edgecolor='black', label=nombre_corto))
-        
+            nombre_corto = str(unidad)[:30] + '...' if len(str(unidad)) > 30 else str(unidad)
+            handles_geo.append(Patch(facecolor=paleta_geologia[idx], edgecolor='black', label=nombre_corto))
         if len(unidades_geologia) > max_items_leyenda:
-            legend_elements.append(Patch(facecolor='white', edgecolor='white',
-                                         label=f'(+{len(unidades_geologia)-max_items_leyenda} más)',
-                                         linewidth=0))
-    
-    legend_elements.extend([
-        Patch(facecolor='white', edgecolor='white', label='', linewidth=0),
-        Line2D([0], [0], color='red', lw=2, linestyle='--', label='Límite Distrital'),
-        Line2D([0], [0], color='black', ls='-', lw=1, label='Grillado UTM')
-    ])
-    
-    ncols = 2 if len(legend_elements) > 8 else 1
-    
-    leg = ax_leyenda.legend(
-        handles=legend_elements,
-        loc='center',
-        ncol=ncols,
-        frameon=True,
-        fontsize=7.5,
-        title="LEYENDA",
-        title_fontproperties={'size': 10, 'weight': 'bold'},
-        handletextpad=0.5,
-        columnspacing=1.0,
-        borderpad=0.7,
-        handlelength=1.5
-    )
-    
+            handles_geo.append(Patch(facecolor='white', edgecolor='white', label=f'(+{len(unidades_geologia)-max_items_leyenda} más)', linewidth=0))
+
+        try:
+            leg_geo = ax_main.legend(handles=handles_geo, loc='upper left', bbox_to_anchor=(0.02, 0.98),
+                                   frameon=True, fontsize=7.5, title='LEYENDA', ncol=1,
+                                   title_fontproperties={'size': 9, 'weight': 'bold'})
+            leg_geo.get_frame().set_edgecolor('black')
+            leg_geo.get_frame().set_linewidth(1.0)
+            # Formatear el primer texto (subtítulo) en negrita y alineado a la izquierda dentro de la leyenda
+            try:
+                texts = leg_geo.get_texts()
+                if len(texts) > 0:
+                    texts[0].set_fontweight('bold')
+                    texts[0].set_ha('left')
+            except Exception:
+                pass
+            ax_main.add_artist(leg_geo)
+        except Exception:
+            # Fallback simple legend
+            ax_main.legend(handles=handles_geo, loc='upper left', frameon=True, fontsize=7.5, title='GEOLOGÍA')
+
+    # --- Caja de simbología (todo lo demás) en la columna derecha ---
+    # Orden: puntos -> líneas -> polígonos -> otros
+    legend_elements = []
+    # Puntos (Centros poblados)
+    legend_elements.append(Line2D([0], [0], marker='o', color='#2f2f2f', label='Centros Poblados', markersize=6, linestyle='None'))
+    # Líneas (Ríos y Vías)
+    legend_elements.append(Line2D([0], [0], color='#1f78b4', lw=1.0, label='Ríos'))
+    legend_elements.append(Line2D([0], [0], color='#D62728', lw=1.0, label='Vía Nacional'))
+    legend_elements.append(Line2D([0], [0], color='#FF7F0E', lw=1.0, label='Vía Departamental'))
+    legend_elements.append(Line2D([0], [0], color='#8C564B', lw=1.0, label='Vía Vecinal'))
+    # Polígonos (Lagos)
+    legend_elements.append(Patch(facecolor='#4DA6FF', edgecolor='none', label='Lagos'))
+    # Otros elementos
+    legend_elements.append(Line2D([0], [0], color='red', lw=2, linestyle='--', label='Límite Distrital'))
+
+    # Organizar en columnas internas: máximo 5 elementos por columna
+    items_count = len(legend_elements)
+    max_per_col = 5
+    ncols_internal = max(1, math.ceil(items_count / max_per_col))
+
+    # Usar ncol = ncols_internal para distribuir en columnas internas cuando sean necesarias
+    leg = ax_leyenda.legend(handles=legend_elements, loc='center', ncol=ncols_internal, frameon=True,
+                           fontsize=8, title="Simbología", title_fontproperties={'size': 10, 'weight': 'bold'},
+                           handletextpad=0.5, columnspacing=1.0, borderpad=0.7, handlelength=1.5)
     leg.get_title().set_ha('center')
     leg.get_frame().set_edgecolor('black')
     leg.get_frame().set_linewidth(1.2)
@@ -609,10 +1042,10 @@ def generar_mapa_geologia(nombre_usuario, departamento_sel, provincia_sel, distr
 if __name__ == "__main__":
     # Ejemplo de uso del script
     resultado = generar_mapa_geologia(
-        nombre_usuario="USUARIO_PRUEBA",
-        departamento_sel="CUSCO",
-        provincia_sel="CUSCO",
-        distrito_sel="CUSCO"
+        nombre_usuario="USUARIO_PRUEBA0",
+        departamento_sel="PIURA",
+        provincia_sel="PIURA",
+        distrito_sel="PIURA"
     )
     
     if resultado:

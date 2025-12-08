@@ -1154,3 +1154,7 @@ if __name__ == "__main__":
         print(f"🎉 ¡Mapa generado exitosamente en: {resultado}")
     else:
         print("❌ No se pudo generar el mapa geológico")
+
+
+
+

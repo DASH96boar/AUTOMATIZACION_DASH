@@ -658,3 +658,4 @@ def generar_mapa_climatica(nombre_usuario, departamento_sel, provincia_sel, dist
     print(f"   📊 Unidades climáticas identificadas: {len(unidades_clima)}")
 
     return ruta_guardado_final
+

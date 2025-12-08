@@ -15,6 +15,7 @@ from matplotlib.patches import Polygon, Rectangle, Patch
 from matplotlib.lines import Line2D
 import datetime
 import matplotlib.colors as mcolors
+import math
 
 # --- RUTA BASE ORIGINAL ---
 ruta_base = "/workspaces/AUTOMATIZACION_DASH/PRUEBA"
@@ -162,33 +163,125 @@ def grillado_grados_mejorado(ax, bbox, ndiv=5, decimales=2):
 
 def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, tipo_mapa, gdf_dpto_sel=None, gdf_prov_sel=None, col_prov=None, col_dpto=None, departamento_sel=None, provincia_sel=None, gdf_departamentos=None, gdf_provincias=None, gdf_oceano=None):
     is_focus_valid = not gdf_focus.empty and all(np.isfinite(gdf_focus.total_bounds))
-    if tipo_mapa == "pais": bbox_geom = gdf_departamentos.total_bounds; dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
-    elif tipo_mapa == "provincia": bbox_geom = gdf_dpto_sel.total_bounds; dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.12, (bbox_geom[3] - bbox_geom[1]) * 0.12
-    elif tipo_mapa == "distrito":
-        provincia_seleccionada_geom = gdf_prov_sel.geometry.unary_union
-        geoms_vecinas = [prov.geometry for _, prov in gdf_provincias.iterrows() if prov[col_prov] != provincia_sel and prov.geometry.touches(provincia_seleccionada_geom)]
-        area_de_interes = gpd.GeoSeries([provincia_seleccionada_geom] + geoms_vecinas).unary_union
-        bbox_geom = area_de_interes.bounds; dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.15, (bbox_geom[3] - bbox_geom[1]) * 0.15
-    else: bbox_geom = gdf_departamentos.total_bounds; dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
-    x0, y0, x1, y1 = bbox_geom[0] - dx, bbox_geom[1] - dy, bbox_geom[2] + dx, bbox_geom[3] + dy
-    S = max(x1 - x0, y1 - y0); cx, cy = (x0 + x1) / 2, (y0 + y1) / 2; bbox = (cx - S / 2, cy - S / 2, cx + S / 2, cy + S / 2)
-    if gdf_oceano is not None: gdf_oceano.clip(box(*bbox)).plot(ax=ax, color="#A4D4FF", edgecolor="none", zorder=2)
     if tipo_mapa == "pais":
-        if gdf_base_map is not None: gdf_base_map.plot(ax=ax, color="#f0eee8", edgecolor="black", linewidth=0.4, zorder=1)
-        if gdf_context is not None: gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor="black", linewidth=0.7, zorder=3)
+        bbox_geom = gdf_departamentos.total_bounds
+        dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
     elif tipo_mapa == "provincia":
-        if gdf_base_map is not None: gdf_base_map.plot(ax=ax, color="#f0eee8", edgecolor="black", linewidth=0.4, zorder=1)
-        if gdf_context is not None: gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor="black", linewidth=0.7, zorder=3)
+        bbox_geom = gdf_dpto_sel.total_bounds
+        dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.12, (bbox_geom[3] - bbox_geom[1]) * 0.12
+    elif tipo_mapa == "distrito":
+        # Para el inset de distrito queremos un acercamiento mayor — usar la provincia seleccionada
+        try:
+            if gdf_prov_sel is not None and not gdf_prov_sel.empty:
+                bbox_geom = gdf_prov_sel.total_bounds
+                # reducir el buffer para acercar más (5% de la dimensión)
+                dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.05, (bbox_geom[3] - bbox_geom[1]) * 0.05
+            else:
+                provincia_seleccionada_geom = gdf_prov_sel.geometry.unary_union if gdf_prov_sel is not None else None
+                geoms_vecinas = [prov.geometry for _, prov in gdf_provincias.iterrows() if prov[col_prov] != provincia_sel and provincia_seleccionada_geom is not None and prov.geometry.touches(provincia_seleccionada_geom)]
+                area_de_interes = gpd.GeoSeries([provincia_seleccionada_geom] + geoms_vecinas).unary_union
+                bbox_geom = area_de_interes.bounds
+                dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.08, (bbox_geom[3] - bbox_geom[1]) * 0.08
+        except Exception:
+            try:
+                if gdf_prov_sel is not None and not gdf_prov_sel.empty:
+                    bbox_geom = gdf_prov_sel.total_bounds
+                    dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.05, (bbox_geom[3] - bbox_geom[1]) * 0.05
+                else:
+                    bbox_geom = gdf_departamentos.total_bounds
+                    dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
+            except Exception:
+                bbox_geom = gdf_departamentos.total_bounds
+                dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
+    else:
+        bbox_geom = gdf_departamentos.total_bounds
+        dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
+
+    x0, y0, x1, y1 = bbox_geom[0] - dx, bbox_geom[1] - dy, bbox_geom[2] + dx, bbox_geom[3] + dy
+    S = max(x1 - x0, y1 - y0)
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    bbox = (cx - S / 2, cy - S / 2, cx + S / 2, cy + S / 2)
+
+    if gdf_oceano is not None:
+        try:
+            gdf_oceano.clip(box(*bbox)).plot(ax=ax, color="#A4D4FF", edgecolor="none", zorder=2)
+        except Exception:
+            pass
+
+    if tipo_mapa == "pais":
+        if gdf_base_map is not None:
+            gdf_base_map.plot(ax=ax, color="#f0eee8", edgecolor="black", linewidth=0.4, zorder=1)
+        if gdf_context is not None:
+            try:
+                col_name_dpto = next((c for c in ['NOMBDEP', 'NOMBRE', 'NOMB', 'NOMBDEP', 'DEPARTAMEN'] if c in gdf_context.columns), None)
+                if col_name_dpto is not None and departamento_sel is not None:
+                    try:
+                        gdf_context[gdf_context[col_name_dpto] != departamento_sel].plot(ax=ax, color='#f0eee8', edgecolor='black', linewidth=0.4, zorder=1)
+                    except Exception:
+                        pass
+                    try:
+                        gdf_context[gdf_context[col_name_dpto] == departamento_sel].plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+                    except Exception:
+                        pass
+                else:
+                    gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+            except Exception:
+                try:
+                    gdf_context.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+                except Exception:
+                    pass
+    elif tipo_mapa == "provincia":
+        if gdf_base_map is not None:
+            try:
+                gdf_base_map.plot(ax=ax, color='#f0eee8', edgecolor='black', linewidth=0.4, zorder=1)
+            except Exception:
+                pass
+        try:
+            dpto_sel_gdf = gdf_dpto_sel if gdf_dpto_sel is not None else gdf_context
+            if dpto_sel_gdf is not None and not dpto_sel_gdf.empty:
+                dpto_sel_gdf.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+        except Exception:
+            pass
     elif tipo_mapa == "distrito":
         if gdf_provincias is not None:
-            gdf_provincias[gdf_provincias[col_prov] != provincia_sel].plot(ax=ax, color='lightgray', edgecolor='darkgray', linewidth=0.4, zorder=2)
-            gdf_prov_sel.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
-        if gdf_context is not None: gdf_context.plot(ax=ax, facecolor='none', edgecolor="gray", linewidth=0.4, zorder=4)
-    if is_focus_valid: gdf_focus.plot(ax=ax, facecolor="red", edgecolor="red", linewidth=0.2, hatch='o', zorder=5)
-    if all(np.isfinite(bbox)): grillado_grados_mejorado(ax, bbox, ndiv=5, decimales=1)
+            try:
+                gdf_provincias[gdf_provincias[col_prov] != provincia_sel].plot(ax=ax, color='lightgray', edgecolor='darkgray', linewidth=0.4, zorder=2)
+                gdf_prov_sel.plot(ax=ax, color=AMARILLO_CLARO, edgecolor='black', linewidth=0.7, zorder=3)
+            except Exception:
+                pass
+        if gdf_context is not None:
+            try:
+                gdf_context.plot(ax=ax, facecolor='none', edgecolor='gray', linewidth=0.4, zorder=4)
+            except Exception:
+                pass
+
+    if is_focus_valid:
+        try:
+            gdf_focus.plot(ax=ax, facecolor='red', edgecolor='red', linewidth=0.2, hatch='o', zorder=5)
+        except Exception:
+            pass
+
+    if all(np.isfinite(bbox)):
+        grillado_grados_mejorado(ax, bbox, ndiv=5, decimales=1)
+
     ax.text(0.03, 0.05, titulo, transform=ax.transAxes, color="white", fontsize=8, ha="left", va="bottom", zorder=8, bbox=dict(facecolor="#4A90E2", edgecolor="black", boxstyle="round,pad=0.3", alpha=0.9))
-    if is_focus_valid: ax.text(gdf_focus.geometry.centroid.iloc[0].x, gdf_focus.geometry.centroid.iloc[0].y, etiqueta.upper(), color="white", fontsize=8, ha="center", va="center", zorder=9, path_effects=[path_effects.withStroke(linewidth=3, foreground="black")])
-    ax.set_xlim(bbox[0], bbox[2]); ax.set_ylim(bbox[1], bbox[3]); ax.set_facecolor("#f0f8ff"); ax.set_aspect('equal', adjustable='box'); ax.axis('on')
+
+    if is_focus_valid:
+        try:
+            fx = gdf_focus.geometry.centroid.iloc[0].x
+            fy = gdf_focus.geometry.centroid.iloc[0].y
+            if tipo_mapa == "pais":
+                ax.text(fx, fy, etiqueta.upper(), color='black', fontsize=6, ha="center", va="center", zorder=9, path_effects=[path_effects.withStroke(linewidth=0.8, foreground='white')])
+            else:
+                ax.text(fx, fy, etiqueta.upper(), color=LABEL_COLOR if 'LABEL_COLOR' in globals() else 'black', fontsize=8, ha="center", va="center", zorder=9, path_effects=[path_effects.withStroke(linewidth=3, foreground='white')])
+        except Exception:
+            pass
+
+    ax.set_xlim(bbox[0], bbox[2])
+    ax.set_ylim(bbox[1], bbox[3])
+    ax.set_facecolor("#f0f8ff")
+    ax.set_aspect('equal', adjustable='box')
+    ax.axis('on')
 
 # ════════════════════════════════════════════════════════════════════════
 # 🗺️ FUNCIÓN PRINCIPAL DE GENERACIÓN DE MAPA DE CLASIFICACIÓN CLIMÁTICA
@@ -331,33 +424,89 @@ def generar_mapa_climatica(nombre_usuario, departamento_sel, provincia_sel, dist
         print(f"   ⚠️ No se pudo cargar el mapa base: {e}")
         ax_main.set_facecolor("#e8e8e8")
 
+    # ---- CARGA Y DIBUJO DE CAPAS ADICIONALES (lagos, ríos, vías, centros poblados) ----
+    print("   📥 Cargando capas adicionales (lagos, ríos, vías, centros poblados)...")
+
+    def _leer_y_preparar(keyword_list):
+        """Buscar shapefile por lista de palabras clave y devolver GeoDataFrame en 3857 o None"""
+        for kw in keyword_list:
+            encontrado = buscar_shapefile(kw)
+            if encontrado:
+                try:
+                    gdf = gpd.read_file(encontrado)
+                    if gdf.crs is None:
+                        gdf.set_crs(epsg=4326, inplace=True)
+                    return gdf.to_crs(epsg=3857)
+                except Exception as e:
+                    print(f"   ⚠️ Error cargando {encontrado}: {e}")
+                    continue
+        return None
+
+    # helper de plot sencillo
+    def plot_capa_simbologia(gdf, ax, tipo='line', color='#000000', lw=0.6, markersize=6, zorder=10, alpha=0.9):
+        if gdf is None or gdf.empty:
+            return
+        try:
+            geom0 = gdf.geometry.iloc[0]
+            gtype = geom0.geom_type.lower()
+        except Exception:
+            gtype = None
+        try:
+            if tipo == 'point' or (gtype and 'point' in gtype):
+                gdf.plot(ax=ax, marker='o', color=color, markersize=markersize, zorder=zorder, alpha=alpha)
+            elif tipo == 'line' or (gtype and ('line' in gtype or 'curve' in gtype)):
+                gdf.plot(ax=ax, color=color, linewidth=lw, zorder=zorder, alpha=alpha)
+            else:
+                gdf.plot(ax=ax, facecolor=color, edgecolor='none', alpha=alpha, zorder=zorder)
+        except Exception as e:
+            print(f"   ⚠️ Error al plotear capa: {e}")
+
+    # Buscar y cargar capas por palabras clave típicas
+    gdf_lagos = _leer_y_preparar(['lago', 'laguna', 'lago_y', 'lagos'])
+    gdf_rios = _leer_y_preparar(['rio', 'río', 'rios', 'ríos'])
+    gdf_vias_nac = _leer_y_preparar(['via_nacional', 'via_nacional', 'vial_nacional', 'red_vial_nacional', 'via_nacional_dic'])
+    gdf_vias_dep = _leer_y_preparar(['via_departamental', 'red_vial_departamental', 'vial_departamental'])
+    gdf_vias_vec = _leer_y_preparar(['via_vecinal', 'red_vial_vecinal', 'vial_vecinal'])
+    gdf_centros = _leer_y_preparar(['centros_poblados', 'centros_poblados_inei', 'centros'])
+
+    # Recortar y plotear dentro del distrito para no dibujar todo el país
+    try:
+        if gdf_lagos is not None:
+            gdf_lagos_c = gpd.clip(gdf_lagos, gdf_distrito)
+            plot_capa_simbologia(gdf_lagos_c, ax_main, tipo='polygon', color='#4DA6FF', alpha=0.6, zorder=3)
+
+        if gdf_rios is not None:
+            gdf_rios_c = gpd.clip(gdf_rios, gdf_distrito)
+            plot_capa_simbologia(gdf_rios_c, ax_main, tipo='line', color='#1f78b4', lw=0.7, zorder=12, alpha=0.9)
+
+        if gdf_vias_nac is not None:
+            gdf_vias_nac_c = gpd.clip(gdf_vias_nac, gdf_distrito)
+            plot_capa_simbologia(gdf_vias_nac_c, ax_main, tipo='line', color='#D62728', lw=0.9, zorder=13, alpha=0.95)
+
+        if gdf_vias_dep is not None:
+            gdf_vias_dep_c = gpd.clip(gdf_vias_dep, gdf_distrito)
+            plot_capa_simbologia(gdf_vias_dep_c, ax_main, tipo='line', color='#FF7F0E', lw=0.8, zorder=13, alpha=0.9)
+
+        if gdf_vias_vec is not None:
+            gdf_vias_vec_c = gpd.clip(gdf_vias_vec, gdf_distrito)
+            plot_capa_simbologia(gdf_vias_vec_c, ax_main, tipo='line', color='#8C564B', lw=0.6, zorder=13, alpha=0.85)
+
+        if gdf_centros is not None:
+            gdf_centros_c = gpd.clip(gdf_centros, gdf_distrito)
+            plot_capa_simbologia(gdf_centros_c, ax_main, tipo='point', color='#2f2f2f', markersize=6, zorder=16, alpha=0.95)
+    except Exception as e:
+        print(f"   ⚠️ Error al recortar/plotear capas adicionales: {e}")
+
+    # ---- FIN CAPAS ADICIONALES ----
+
     # --- DIBUJAR CLASIFICACIÓN CLIMÁTICA CON ETIQUETAS ---
     if gdf_clima_clipped is not None and not gdf_clima_clipped.empty:
         print("   🌡️ Dibujando unidades climáticas...")
         for idx, unidad in enumerate(unidades_clima):
             gdf_unidad = gdf_clima_clipped[gdf_clima_clipped[col_clima] == unidad]
-            gdf_unidad.plot(ax=ax_main, color=paleta_clima[idx], edgecolor='black',
-                           linewidth=0.5, alpha=0.7, zorder=4)
-            
-            # Agregar etiqueta en el centroide de cada unidad
-            try:
-                centroid = gdf_unidad.geometry.unary_union.centroid
-                # Truncar nombre si es muy largo
-                nombre_etiqueta = str(unidad)[:25] + '...' if len(str(unidad)) > 25 else str(unidad)
-                ax_main.text(
-                    centroid.x, centroid.y,
-                    nombre_etiqueta,
-                    fontsize=7,
-                    ha='center',
-                    va='center',
-                    color='white',
-                    fontweight='bold',
-                    bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.7, edgecolor='none'),
-                    zorder=10,
-                    path_effects=[path_effects.withStroke(linewidth=2, foreground='black')]
-                )
-            except Exception as e:
-                print(f"   ⚠️ No se pudo agregar etiqueta para {unidad}: {e}")
+            gdf_unidad.plot(ax=ax_main, color=paleta_clima[idx], edgecolor='none',
+                           linewidth=0, alpha=0.7, zorder=4)
+            # etiquetas deshabilitadas por petición del usuario
 
     # --- LÍMITE DEL DISTRITO ---
     if not gdf_distrito.empty:
@@ -369,63 +518,99 @@ def generar_mapa_climatica(nombre_usuario, departamento_sel, provincia_sel, dist
     add_north_arrow_blanco_completo(ax_main, xy_pos=(0.93, 0.08), size=0.06)
     ax_main.add_artist(ScaleBar(1, units="m", location="lower left", box_alpha=0.6, border_pad=0.5, scale_loc='bottom'))
 
-    # --- MEMBRETE Y LEYENDA ---
-    gs_memb_ley = gs_izquierda[2].subgridspec(1, 2, wspace=0.1)
-    ax_membrete = fig.add_subplot(gs_memb_ley[0])
+    # --- MEMBRETE, LOGO Y LEYENDA (estructura estilo geologia_final) ---
+    gs_memb_ley = gs_izquierda[2].subgridspec(1, 3, wspace=0.02, width_ratios=[0.4, 2.0, 1.0])
+
+    # Espacio para logo (columna izquierda)
+    ax_logo = fig.add_subplot(gs_memb_ley[0])
+    ax_logo.axis('off')
+    try:
+        from matplotlib.patches import Rectangle as MplRect
+        rect = MplRect((0.10, 0.08), 0.8, 0.84, transform=ax_logo.transAxes,
+                       facecolor='none', edgecolor='black', linewidth=1.4)
+        ax_logo.add_patch(rect)
+    except Exception:
+        pass
+
+    # Membrete en la columna central
+    ax_membrete = fig.add_subplot(gs_memb_ley[1])
     fig.canvas.draw()
     add_membrete(ax_membrete, departamento_sel, provincia_sel, distrito_sel, ax_main, fig)
 
-    # --- LEYENDA ACTUALIZADA ---
-    ax_leyenda = fig.add_subplot(gs_memb_ley[1])
+    # Caja de leyenda en la columna derecha
+    ax_leyenda = fig.add_subplot(gs_memb_ley[2])
     ax_leyenda.axis('off')
+    # --- LEYENDA INTERNA: Solo clasificación climática (arriba-izquierda dentro de ax_main)
+    try:
+        clas_handles = []
+        if len(unidades_clima) > 0:
+            # Mostrar hasta 6 unidades dentro del mapa principal
+            max_interior = 6
+            for idx, unidad in enumerate(unidades_clima[:max_interior]):
+                nombre_corto = str(unidad)[:20] + '...' if len(str(unidad)) > 20 else str(unidad)
+                clas_handles.append(Patch(facecolor=paleta_clima[idx], edgecolor='black', label=nombre_corto))
+            if len(unidades_clima) > max_interior:
+                clas_handles.append(Patch(facecolor='white', edgecolor='white', label=f'(+{len(unidades_clima)-max_interior} más)'))
 
-    legend_elements = []
+        if clas_handles:
+            leg_interior = ax_main.legend(
+                handles=clas_handles,
+                loc='upper left',
+                bbox_to_anchor=(0.02, 0.98),
+                frameon=True,
+                fontsize=7,
+                title='LEYENDA\nCLASIFICACIÓN',
+                title_fontproperties={'size': 9, 'weight': 'bold'},
+                handletextpad=0.4,
+                borderpad=0.4,
+                framealpha=0.9,
+                handlelength=1.2
+            )
+            leg_interior.get_title().set_ha('left')
+            leg_interior.get_frame().set_edgecolor('black')
+            leg_interior.get_frame().set_linewidth(0.8)
+    except Exception as e:
+        print(f"⚠️ Error creando leyenda interior: {e}")
 
-    # Agregar clasificación climática (máximo 3 unidades en leyenda)
-    if len(unidades_clima) > 0:
-        legend_elements.append(Patch(facecolor='white', edgecolor='white',
-                                     label='CLASIFICACIÓN CLIMÁTICA:', linewidth=0))
-        for idx, unidad in enumerate(unidades_clima[:3]):
-            nombre_corto = str(unidad)[:20] + '...' if len(str(unidad)) > 20 else str(unidad)
-            legend_elements.append(Patch(facecolor=paleta_clima[idx],
-                                         edgecolor='black', label=nombre_corto))
-        if len(unidades_clima) > 3:
-            legend_elements.append(Patch(facecolor='white', edgecolor='white',
-                                         label=f'(+{len(unidades_clima)-3} más)',
-                                         linewidth=0))
+    # --- LEYENDA LATERAL: simbología de capas auxiliares (lagos, ríos, vías, centros, límites, grillado) ---
+    legend_elements_aux = []
+    # Simbología consistente con los colores usados al plotear
+    legend_elements_aux.append(Patch(facecolor='#4DA6FF', edgecolor='none', label='Lagos/Lagunas'))
+    legend_elements_aux.append(Line2D([0], [0], color='#1f78b4', lw=2, label='Ríos'))
+    legend_elements_aux.append(Line2D([0], [0], color='#D62728', lw=2, label='Vías Nacionales'))
+    legend_elements_aux.append(Line2D([0], [0], color='#FF7F0E', lw=2, label='Vías Departamentales'))
+    legend_elements_aux.append(Line2D([0], [0], color='#8C564B', lw=2, label='Vías Vecinales'))
+    legend_elements_aux.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='#2f2f2f', markersize=6, label='Centros Poblados'))
+    legend_elements_aux.append(Line2D([0], [0], color='red', lw=2, linestyle='--', label='Límite Distrital'))
+    # 'Grillado UTM' intentionally omitted from simbología lateral (petición del usuario)
 
-    # Agregar otros elementos
-    legend_elements.extend([
-        Line2D([0], [0], color='red', lw=2, linestyle='--', label='Límite Distrital'),
-        Line2D([0], [0], color='black', ls='-', lw=1, label='Grillado UTM')
-    ])
+    # Calcular número de columnas para obtener ~5 elementos por columna
+    num_elementos_aux = len(legend_elements_aux)
+    # columnas = ceil(total / 5)
+    try:
+        ncols_aux = math.ceil(num_elementos_aux / 5) if num_elementos_aux > 0 else 1
+    except Exception:
+        ncols_aux = 2
 
-    # Calcular número de columnas óptimo
-    num_elementos = len(legend_elements)
-    if num_elementos <= 6:
-        ncols = 2
-    elif num_elementos <= 12:
-        ncols = 3
-    else:
-        ncols = 3
-
-    leg = ax_leyenda.legend(
-        handles=legend_elements,
-        loc='center',
-        ncol=ncols,
-        frameon=True,
-        fontsize=7.5,
-        title="LEYENDA",
-        title_fontproperties={'size': 10, 'weight': 'bold'},
-        handletextpad=0.5,
-        columnspacing=1.0,
-        borderpad=0.7,
-        handlelength=1.5
-    )
-
-    leg.get_title().set_ha('center')
-    leg.get_frame().set_edgecolor('black')
-    leg.get_frame().set_linewidth(1.2)
+    try:
+        leg = ax_leyenda.legend(
+            handles=legend_elements_aux,
+            loc='center',
+            ncol=ncols_aux,
+            frameon=True,
+            fontsize=8,
+            title="Simbología",
+            title_fontproperties={'size': 10, 'weight': 'bold'},
+            handletextpad=0.6,
+            columnspacing=1.0,
+            borderpad=0.6,
+            handlelength=1.5
+        )
+        leg.get_title().set_ha('center')
+        leg.get_frame().set_edgecolor('black')
+        leg.get_frame().set_linewidth(1.2)
+    except Exception as e:
+        print(f"⚠️ Error creando leyenda auxiliar lateral: {e}")
 
     # --- MAPAS DE UBICACIÓN A LA DERECHA ---
     print("   🗺️ Generando mapas de ubicación...")

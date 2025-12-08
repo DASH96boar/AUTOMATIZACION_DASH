@@ -119,6 +119,65 @@ def add_north_arrow_blanco_completo(ax, xy_pos=(0.93, 0.08), size=0.06):
             ha='center', va='center', color='white', 
             path_effects=[path_effects.withStroke(linewidth=3, foreground='black')])
 
+
+def add_north_arrow_esquina(ax, xy_pos=(0.96, 0.96), size=0.04, offset=0.02, halo_width=0.8):
+    """Dibuja una flecha de norte cerca de la esquina superior derecha.
+    Cambios respecto a la versión anterior:
+    - Se desplaza hacia adentro usando `offset` para separarla de la esquina.
+    - Se dibuja la forma interior como un único polígono blanco con contorno negro
+      (evita las separaciones negras entre triángulo y asta).
+    - Contorno más fino y más limpio.
+    """
+    # Ajustar posición hacia adentro desde la esquina (offset en unidades de axes)
+    base_x = xy_pos[0] - offset
+    base_y = xy_pos[1] - offset
+    x = base_x
+    y = base_y
+    s = size
+
+    # Coordenadas del polígono combinado (triángulo + rectángulo) en coordenadas de ejes
+    tip = (x, y)
+    left_base = (x - s * 0.45, y - s * 0.60)
+    left_body_bottom = (x - s * 0.12, y - s * 1.02)
+    right_body_bottom = (x + s * 0.12, y - s * 1.02)
+    right_base = (x + s * 0.45, y - s * 0.60)
+
+    # En lugar de usar escala uniforme (que producía formas no deseadas), construimos
+    # explícitamente una flecha compuesta por punta triangular y asta rectangular.
+    tip = (x, y)
+    tip_y = y
+    base_y = y - s * 0.60
+    shaft_bottom_y = y - s * 1.08
+
+    left_tip = (x - s * 0.45, base_y)
+    right_tip = (x + s * 0.45, base_y)
+    left_shaft = (x - s * 0.18, base_y)
+    right_shaft = (x + s * 0.18, base_y)
+    left_shaft_bottom = (x - s * 0.18, shaft_bottom_y)
+    right_shaft_bottom = (x + s * 0.18, shaft_bottom_y)
+
+    # Polígono exterior negro (sirve como borde)
+    outer_coords = np.array([
+        tip,
+        left_tip,
+        left_shaft,
+        left_shaft_bottom,
+        right_shaft_bottom,
+        right_shaft,
+        right_tip
+    ])
+    # Dibujar la flecha totalmente negra con un halo blanco delgado
+    poly = Polygon(outer_coords, transform=ax.transAxes, facecolor='black', edgecolor='none', linewidth=0, zorder=61)
+    poly.set_path_effects([path_effects.withStroke(linewidth=halo_width, foreground='white')])
+    ax.add_patch(poly)
+
+    # (Se elimina el polígono interior blanco para dejar la flecha completamente negra)
+
+    # Texto 'N' encima, con halo blanco fino
+    ax.text(x, tip_y + s * 0.08, 'N', transform=ax.transAxes, fontsize=10, fontweight='bold',
+            ha='center', va='bottom', color='black', zorder=62,
+            path_effects=[path_effects.withStroke(linewidth=1.2, foreground='white')])
+
 def calculate_numeric_scale(ax, fig):
     xlim = ax.get_xlim()
     ground_width_m = xlim[1] - xlim[0]
@@ -874,6 +933,48 @@ def generar_mapa_geologia(nombre_usuario, departamento_sel, provincia_sel, distr
         if 'gdf_centros' in locals() and gdf_centros is not None:
             gdf_centros_c = gpd.clip(gdf_centros, gdf_distrito)
             plot_capa_simbologia(gdf_centros_c, ax_main, tipo='point', color='#2f2f2f', markersize=6, zorder=16, alpha=0.95)
+            # Etiquetar Centros Poblados: nombre capitalizado (Primera letra mayúscula, resto minúsculas),
+            # tamaño pequeño y halo blanco delgado para legibilidad
+            try:
+                # intentar identificar columna de nombre
+                possible_name_cols = ['NOMBRE', 'NOM', 'NAME', 'nombre', 'name', 'NOMCP', 'CENTRO', 'NOM_CENT', 'DESC']
+                name_col = next((c for c in possible_name_cols if c in gdf_centros_c.columns), None)
+
+                for _, r in gdf_centros_c.iterrows():
+                    try:
+                        if r.geometry is None:
+                            continue
+                        # obtener etiqueta
+                        label_val = None
+                        if name_col and pd.notna(r.get(name_col)):
+                            label_val = str(r.get(name_col)).strip()
+                        else:
+                            # fallback: buscar primera columna de texto no vacía
+                            for c in r.index:
+                                v = r.get(c)
+                                if isinstance(v, str) and v.strip():
+                                    label_val = v.strip()
+                                    break
+                        if not label_val:
+                            continue
+
+                        # Formatear: primera letra de cada palabra mayúscula, resto minúscula
+                        label_fmt = label_val.title()
+
+                        # Determinar punto para etiqueta (representative_point funciona para puntos y polígonos)
+                        try:
+                            p = r.geometry.representative_point()
+                        except Exception:
+                            p = r.geometry
+
+                        # Usar annotate con desplazamiento en puntos para separar el texto del símbolo
+                        ax.annotate(label_fmt, xy=(p.x, p.y), xytext=(4, 0), textcoords='offset points',
+                                    fontsize=6, color='#2f2f2f', ha='left', va='center', zorder=200, clip_on=False,
+                                    path_effects=[path_effects.withStroke(linewidth=0.5, foreground='white')])
+                    except Exception:
+                        continue
+            except Exception:
+                pass
     except Exception as e:
         print(f"   ⚠️ Error al plotear Centros Poblados: {e}")
     
@@ -881,7 +982,8 @@ def generar_mapa_geologia(nombre_usuario, departamento_sel, provincia_sel, distr
                      linestyle='--', alpha=0.9, zorder=15)
     
     grillado_utm_proyectado(ax_main, bbox_main, ndiv=8)
-    add_north_arrow_blanco_completo(ax_main, xy_pos=(0.93, 0.08), size=0.06)
+    # Colocar flecha norte en esquina superior derecha con estilo similar a la imagen proporcionada
+    add_north_arrow_esquina(ax_main, xy_pos=(0.985, 0.985), size=0.05)
     ax_main.add_artist(ScaleBar(1, units="m", location="lower left", 
                                 box_alpha=0.6, border_pad=0.5, scale_loc='bottom'))
     
@@ -1042,7 +1144,7 @@ def generar_mapa_geologia(nombre_usuario, departamento_sel, provincia_sel, distr
 if __name__ == "__main__":
     # Ejemplo de uso del script
     resultado = generar_mapa_geologia(
-        nombre_usuario="USUARIO_PRUEBA0",
+        nombre_usuario="USUARIO_PRUEBA1",
         departamento_sel="PIURA",
         provincia_sel="PIURA",
         distrito_sel="PIURA"

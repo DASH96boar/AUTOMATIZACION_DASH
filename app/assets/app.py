@@ -618,6 +618,39 @@ dashboard_layout = dbc.Container([
                                     className='mb-4'
                                 )
                             ]),
+                            # Espacio para escudo (deshabilitado por ahora)
+                            html.Div([
+                                html.Label([
+                                    html.I(className="bi bi-shield-fill me-2"),
+                                    "Escudo (subir)"
+                                ]),
+                                dbc.Input(
+                                    id='escudo-input',
+                                    type='text',
+                                    placeholder='Subir escudo (habilitar después)',
+                                    disabled=True,
+                                    className='mb-2'
+                                ),
+                                dbc.Button([
+                                    html.I(className="bi bi-upload me-2"),
+                                    "Subir escudo"
+                                ], id='escudo-upload-button', color='secondary', size='sm', disabled=True, className='mb-3')
+                            ]),
+
+                            # Espacio para número de mapa (deshabilitado por ahora)
+                            html.Div([
+                                html.Label([
+                                    html.I(className="bi bi-card-list me-2"),
+                                    "N° Mapa"
+                                ]),
+                                dbc.Input(
+                                    id='map-number-input',
+                                    type='text',
+                                    placeholder='Número de mapa (habilitar después)',
+                                    disabled=True,
+                                    className='mb-4'
+                                )
+                            ]),
                             
                             html.Div([
                                 html.Label([

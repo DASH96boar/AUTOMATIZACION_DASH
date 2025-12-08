@@ -16,6 +16,7 @@ from matplotlib.path import Path
 from matplotlib.lines import Line2D
 import datetime
 import rasterio
+import math
 from rasterio.mask import mask as rio_mask
 from matplotlib.colors import BoundaryNorm, ListedColormap
 import shutil
@@ -460,30 +461,33 @@ def mapa_ubicacion(ax, gdf_base_map, gdf_context, gdf_focus, titulo, etiqueta, t
         dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.12, (bbox_geom[3] - bbox_geom[1]) * 0.12
         
     elif tipo_mapa == "distrito":
-        # Lógica de BBOX más compleja para el mapa de distrito (incluir vecinos)
-        if gdf_prov_sel is None or gdf_prov_sel.empty:
-            print("   ❌ Error: Provincia seleccionada no válida para mapa de distrito.")
-            # Fallback a departamento si existe o a país
-            bbox_geom = gdf_dpto_sel.total_bounds if gdf_dpto_sel is not None and not gdf_dpto_sel.empty else gdf_departamentos.total_bounds
-        else:
-            # 1. Caso Dpto Válido: Se usa el Dpto. para recortar las provincias vecinas
-            if gdf_dpto_sel is not None and not gdf_dpto_sel.empty and gdf_provincias is not None:
-                provincia_seleccionada_geom = gdf_prov_sel.geometry.unary_union
-                # Clip de provincias al bbox del departamento para acelerar
-                gdf_provincias_clip = gdf_provincias.clip(gdf_dpto_sel.total_bounds)
-                
-                geoms_vecinas = [prov.geometry for _, prov in gdf_provincias_clip.iterrows() 
-                                if prov[col_prov].upper() != provincia_sel.upper() and prov.geometry.touches(provincia_seleccionada_geom)]
-                
-                area_de_interes = gpd.GeoSeries([provincia_seleccionada_geom] + geoms_vecinas, crs=gdf_provincias.crs).unary_union
-                bbox_geom = area_de_interes.bounds
-                
-            # 2. Caso Dpto NO Válido o no se pudo recortar (se usa solo la Provincia)
-            else:
-                print("   ⚠️ Fallback BBOX: Dpto no encontrado para mapa 'distrito'. Calculando BBOX extendido sin clip por Dpto.")
+        # Para el inset de distrito queremos un acercamiento mayor
+        # Usar preferentemente la extensión de la provincia seleccionada (más zoom)
+        try:
+            if gdf_prov_sel is not None and not gdf_prov_sel.empty:
                 bbox_geom = gdf_prov_sel.total_bounds
-                 
-        dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.15, (bbox_geom[3] - bbox_geom[1]) * 0.15
+                # reducir el buffer para acercar más (5% de la dimensión)
+                dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.05, (bbox_geom[3] - bbox_geom[1]) * 0.05
+            else:
+                # fallback: usar la heurística previa (provincia + vecinas)
+                provincia_seleccionada_geom = gdf_prov_sel.geometry.unary_union if gdf_prov_sel is not None else None
+                geoms_vecinas = [prov.geometry for _, prov in gdf_provincias.iterrows() 
+                                if prov[col_prov] != provincia_sel and provincia_seleccionada_geom is not None and prov.geometry.touches(provincia_seleccionada_geom)]
+                area_de_interes = gpd.GeoSeries([provincia_seleccionada_geom] + geoms_vecinas).unary_union
+                bbox_geom = area_de_interes.bounds
+                dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.08, (bbox_geom[3] - bbox_geom[1]) * 0.08
+        except Exception:
+            # en caso de error, usar la provincia si está disponible o un fallback amplio
+            try:
+                if gdf_prov_sel is not None and not gdf_prov_sel.empty:
+                    bbox_geom = gdf_prov_sel.total_bounds
+                    dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.05, (bbox_geom[3] - bbox_geom[1]) * 0.05
+                else:
+                    bbox_geom = gdf_departamentos.total_bounds
+                    dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
+            except Exception:
+                bbox_geom = gdf_departamentos.total_bounds
+                dx, dy = (bbox_geom[2] - bbox_geom[0]) * 0.25, (bbox_geom[3] - bbox_geom[1]) * 0.25
         
     else:
         # Fallback genérico (debería ser el país)
@@ -674,14 +678,29 @@ def generar_mapa_pendientes(nombre_usuario, departamento_sel, provincia_sel, dis
     ax_main.set_ylim(bbox_main[1], bbox_main[3])
     ax_main.set_aspect('equal', adjustable='box')
 
-    # Si el CRS de salida no es 3857, necesitamos re-ajustar el mapa base
-    if src_crs_out != 'EPSG:3857':
-        print(f"   Advertencia: Raster no está en 3857 ({src_crs_out}). Usando fondo gris.")
+    # Comprobar si el CRS de salida es WebMercator (EPSG:3857) de forma robusta antes de añadir basemap
+    try:
+        crs_str = ''
+        if hasattr(src_crs_out, 'to_string'):
+            crs_str = src_crs_out.to_string().upper()
+        else:
+            crs_str = str(src_crs_out).upper()
+    except Exception:
+        crs_str = str(src_crs_out).upper()
+
+    if '3857' not in crs_str and 'WEBMERCATOR' not in crs_str:
+        print(f"   Advertencia: Raster no está en EPSG:3857 ({src_crs_out}). Usando fondo gris.")
         ax_main.set_facecolor("#e8e8e8")
     else:
         print("   📡 Descargando imagen satelital (Contextily)...")
         try:
-            ctx.add_basemap(ax_main, source=ctx.providers.Esri.WorldImagery, attribution=False, zoom='auto')
+            # Forzar basemap en zorder bajo para que quede bajo el raster semi-transparente
+            # Pasar el CRS del raster para que contextily reproyecte las teselas al CRS del eje
+            try:
+                ctx.add_basemap(ax_main, source=ctx.providers.Esri.WorldImagery, attribution=False, zoom='auto', zorder=0, crs=src_crs_out)
+            except TypeError:
+                # Algunas versiones de contextily no aceptan 'crs' como objeto; pasar string
+                ctx.add_basemap(ax_main, source=ctx.providers.Esri.WorldImagery, attribution=False, zoom='auto', zorder=0, crs=str(src_crs_out))
         except Exception as e:
             print(f"   ⚠️ No se pudo cargar el mapa base: {e}")
             ax_main.set_facecolor("#e8e8e8")
@@ -703,7 +722,7 @@ def generar_mapa_pendientes(nombre_usuario, departamento_sel, provincia_sel, dis
         cmap=cmap, 
         norm=norm, 
         aspect='auto', 
-        alpha=0.8, 
+        alpha=0.6, 
         zorder=4, 
         origin='upper', 
         interpolation='nearest'
@@ -735,6 +754,76 @@ def generar_mapa_pendientes(nombre_usuario, departamento_sel, provincia_sel, dis
         patch = PathPatch(path, facecolor='none', edgecolor='none', transform=ax_main.transData)
         ax_main.add_patch(patch)
         im.set_clip_path(patch)
+
+    # ---- CARGAR Y PLOTEAR CAPAS VECTORIALES ADICIONALES (lagos, ríos, vías, centros poblados)
+    def _leer_y_preparar(keyword_list):
+        """Buscar shapefile por lista de palabras clave y devolver GeoDataFrame en 3857 o None"""
+        for kw in keyword_list:
+            encontrado = buscar_shapefile(kw)
+            if encontrado:
+                try:
+                    gdf = gpd.read_file(encontrado)
+                    if gdf.crs is None:
+                        gdf.set_crs(epsg=4326, inplace=True)
+                    return gdf.to_crs(epsg=3857)
+                except Exception as e:
+                    print(f"   ⚠️ Error cargando {encontrado}: {e}")
+                    continue
+        return None
+
+    def plot_capa_simbologia(gdf, ax, tipo='line', color='#000000', lw=0.6, markersize=6, zorder=10, alpha=0.9):
+        if gdf is None or gdf.empty:
+            return
+        try:
+            geom0 = gdf.geometry.iloc[0]
+            gtype = geom0.geom_type.lower()
+        except Exception:
+            gtype = None
+        try:
+            if tipo == 'point' or (gtype and 'point' in gtype):
+                gdf.plot(ax=ax, marker='o', color=color, markersize=markersize, zorder=zorder, alpha=alpha)
+            elif tipo == 'line' or (gtype and ('line' in gtype or 'curve' in gtype)):
+                gdf.plot(ax=ax, color=color, linewidth=lw, zorder=zorder, alpha=alpha)
+            else:
+                gdf.plot(ax=ax, facecolor=color, edgecolor='none', alpha=alpha, zorder=zorder)
+        except Exception as e:
+            print(f"   ⚠️ Error al plotear capa: {e}")
+
+    # Buscar y cargar capas por palabras clave típicas
+    gdf_lagos = _leer_y_preparar(['lago', 'laguna', 'lago_y', 'lagos'])
+    gdf_rios = _leer_y_preparar(['rio', 'río', 'rios', 'ríos'])
+    gdf_vias_nac = _leer_y_preparar(['via_nacional', 'vial_nacional', 'red_vial_nacional', 'via_nacional_dic'])
+    gdf_vias_dep = _leer_y_preparar(['via_departamental', 'red_vial_departamental', 'vial_departamental'])
+    gdf_vias_vec = _leer_y_preparar(['via_vecinal', 'red_vial_vecinal', 'vial_vecinal'])
+    gdf_centros = _leer_y_preparar(['centros_poblados', 'centros_poblados_inei', 'centros'])
+
+    # Recortar y plotear dentro del distrito para no dibujar todo el país
+    try:
+        if gdf_lagos is not None:
+            gdf_lagos_c = gpd.clip(gdf_lagos, gdf_distrito)
+            plot_capa_simbologia(gdf_lagos_c, ax_main, tipo='polygon', color='#4DA6FF', alpha=0.6, zorder=6)
+
+        if gdf_rios is not None:
+            gdf_rios_c = gpd.clip(gdf_rios, gdf_distrito)
+            plot_capa_simbologia(gdf_rios_c, ax_main, tipo='line', color='#1f78b4', lw=0.7, zorder=11, alpha=0.9)
+
+        if gdf_vias_nac is not None:
+            gdf_vias_nac_c = gpd.clip(gdf_vias_nac, gdf_distrito)
+            plot_capa_simbologia(gdf_vias_nac_c, ax_main, tipo='line', color='#D62728', lw=0.9, zorder=12, alpha=0.95)
+
+        if gdf_vias_dep is not None:
+            gdf_vias_dep_c = gpd.clip(gdf_vias_dep, gdf_distrito)
+            plot_capa_simbologia(gdf_vias_dep_c, ax_main, tipo='line', color='#FF7F0E', lw=0.8, zorder=12, alpha=0.9)
+
+        if gdf_vias_vec is not None:
+            gdf_vias_vec_c = gpd.clip(gdf_vias_vec, gdf_distrito)
+            plot_capa_simbologia(gdf_vias_vec_c, ax_main, tipo='line', color='#8C564B', lw=0.6, zorder=12, alpha=0.85)
+
+        if gdf_centros is not None:
+            gdf_centros_c = gpd.clip(gdf_centros, gdf_distrito)
+            plot_capa_simbologia(gdf_centros_c, ax_main, tipo='point', color='#2f2f2f', markersize=6, zorder=13, alpha=0.95)
+    except Exception as e:
+        print(f"   ⚠️ Error al recortar/plotear capas adicionales: {e}")
     
     # LÍMITE DISTRITAL
     gdf_distrito_viz.plot(ax=ax_main, facecolor="none", edgecolor="black", 
@@ -746,30 +835,90 @@ def generar_mapa_pendientes(nombre_usuario, departamento_sel, provincia_sel, dis
     ax_main.add_artist(ScaleBar(1, units="m", location="lower left", 
                                 box_alpha=0.6, border_pad=0.5, scale_loc='bottom'))
 
-    # MEMBRETE Y LEYENDA
-    gs_memb_ley = gs_izquierda[2].subgridspec(1, 2, wspace=0.1)
-    ax_membrete = fig.add_subplot(gs_memb_ley[0])
+    # MEMBRETE, LOGO Y LEYENDA (estructura estilo geologia_final.py)
+    gs_memb_ley = gs_izquierda[2].subgridspec(1, 3, wspace=0.02, width_ratios=[0.4, 2.0, 1.0])
+
+    # Espacio para logo (columna izquierda)
+    ax_logo = fig.add_subplot(gs_memb_ley[0])
+    ax_logo.axis('off')
+    try:
+        from matplotlib.patches import Rectangle as MplRect
+        rect = MplRect((0.10, 0.08), 0.8, 0.84, transform=ax_logo.transAxes,
+                       facecolor='none', edgecolor='black', linewidth=1.4)
+        ax_logo.add_patch(rect)
+    except Exception:
+        pass
+
+    # Membrete en la columna central
+    ax_membrete = fig.add_subplot(gs_memb_ley[1])
     fig.canvas.draw()
     add_membrete(ax_membrete, departamento_sel, provincia_sel, distrito_sel, ax_main, fig)
 
-    ax_leyenda = fig.add_subplot(gs_memb_ley[1])
+    # Caja de leyenda en la columna derecha
+    ax_leyenda = fig.add_subplot(gs_memb_ley[2])
     ax_leyenda.axis('off')
+    # --- LEYENDA INTERNA: Pendientes (arriba-izquierda dentro de ax_main)
+    try:
+        clas_handles = []
+        for idx, etiqueta in enumerate(ETIQUETAS_PENDIENTE):
+            clas_handles.append(Patch(facecolor=COLORES_PENDIENTE[idx], edgecolor='black', label=etiqueta))
 
-    legend_elements = [Patch(facecolor='white', edgecolor='white', label='PENDIENTES (°):', linewidth=0)]
-    for idx, etiqueta in enumerate(ETIQUETAS_PENDIENTE):
-        legend_elements.append(Patch(facecolor=COLORES_PENDIENTE[idx], edgecolor='black', label=etiqueta))
+        if clas_handles:
+            leg_interior = ax_main.legend(
+                handles=clas_handles,
+                loc='upper left',
+                bbox_to_anchor=(0.02, 0.98),
+                frameon=True,
+                fontsize=8,
+                title='LEYENDA\nPENDIENTES',
+                title_fontproperties={'size': 9, 'weight': 'bold'},
+                handletextpad=0.4,
+                borderpad=0.4,
+                framealpha=0.9,
+                handlelength=1.2
+            )
+            leg_interior.get_title().set_ha('left')
+            leg_interior.get_frame().set_edgecolor('black')
+            leg_interior.get_frame().set_linewidth(0.8)
+    except Exception as e:
+        print(f"⚠️ Error creando leyenda interior de pendientes: {e}")
 
-    legend_elements.extend([
-        Patch(facecolor='white', edgecolor='white', label='', linewidth=0),
-        Line2D([0], [0], color='black', lw=1, linestyle=':', label='Límite Distrital')
-    ])
+    # --- LEYENDA LATERAL: simbología de capas auxiliares (lagos, ríos, vías, centros, límite) ---
+    legend_elements_aux = []
+    legend_elements_aux.append(Patch(facecolor='#4DA6FF', edgecolor='none', label='Lagos/Lagunas'))
+    legend_elements_aux.append(Line2D([0], [0], color='#1f78b4', lw=2, label='Ríos'))
+    legend_elements_aux.append(Line2D([0], [0], color='#D62728', lw=2, label='Vías Nacionales'))
+    legend_elements_aux.append(Line2D([0], [0], color='#FF7F0E', lw=2, label='Vías Departamentales'))
+    legend_elements_aux.append(Line2D([0], [0], color='#8C564B', lw=2, label='Vías Vecinales'))
+    legend_elements_aux.append(Line2D([0], [0], marker='o', color='w', markerfacecolor='#2f2f2f', markersize=6, label='Centros Poblados'))
+    legend_elements_aux.append(Line2D([0], [0], color='black', lw=1.2, linestyle=':', label='Límite Distrital'))
 
-    leg = ax_leyenda.legend(handles=legend_elements, loc='center', ncol=1, frameon=True, fontsize=8,
-                           title="LEYENDA", title_fontproperties={'size': 10, 'weight': 'bold'},
-                           handletextpad=0.5, columnspacing=1.0, borderpad=0.7, handlelength=1.5)
-    leg.get_title().set_ha('center')
-    leg.get_frame().set_edgecolor('black')
-    leg.get_frame().set_linewidth(1.2)
+    # Columnas ~5 elementos por columna
+    num_elementos_aux = len(legend_elements_aux)
+    try:
+        ncols_aux = math.ceil(num_elementos_aux / 5) if num_elementos_aux > 0 else 1
+    except Exception:
+        ncols_aux = 1
+
+    try:
+        leg = ax_leyenda.legend(
+            handles=legend_elements_aux,
+            loc='center',
+            ncol=ncols_aux,
+            frameon=True,
+            fontsize=8,
+            title="Simbología",
+            title_fontproperties={'size': 10, 'weight': 'bold'},
+            handletextpad=0.6,
+            columnspacing=1.0,
+            borderpad=0.6,
+            handlelength=1.5
+        )
+        leg.get_title().set_ha('center')
+        leg.get_frame().set_edgecolor('black')
+        leg.get_frame().set_linewidth(1.2)
+    except Exception as e:
+        print(f"⚠️ Error creando leyenda auxiliar lateral: {e}")
 
     # 7. MAPAS DE UBICACIÓN
     print("   🗺️ Generando mapas de ubicación...")
